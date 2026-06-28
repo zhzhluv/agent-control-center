@@ -26,3 +26,18 @@ Thumbs.db
 
 # Debug
 npm-debug.log*
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Temporary documentation (remove before production)
+IMPLEMENTATION_COMPLETE.md
+OFFICE_LAYOUT.txt
+PIXEL_OFFICE_SUMMARY.md
+QUICKSTART.md
+
+# Unused development files
+client/src/utils/
+client/src/components/*.example.tsx
+client/src/components/*_README.md
+client/src/components/PIXEL_OFFICE_README.md

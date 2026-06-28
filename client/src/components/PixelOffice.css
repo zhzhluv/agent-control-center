@@ -1,0 +1,149 @@
+.pixel-office {
+  position: relative;
+  display: inline-block;
+  background: #1a1a2e;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.office-canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  cursor: default;
+}
+
+/* 범례 */
+.office-legend {
+  display: flex;
+  gap: 20px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.legend-dot.working {
+  background: #4CAF50;
+  box-shadow: 0 0 6px #4CAF50;
+}
+
+.legend-dot.idle {
+  background: #2196F3;
+  box-shadow: 0 0 6px #2196F3;
+}
+
+.legend-dot.waiting {
+  background: #FFC107;
+  box-shadow: 0 0 6px #FFC107;
+}
+
+/* 툴팁 */
+.agent-tooltip {
+  position: absolute;
+  background: rgba(20, 20, 35, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 180px;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tooltip-status {
+  font-size: 14px;
+}
+
+.tooltip-status.working { color: #4CAF50; }
+.tooltip-status.idle { color: #2196F3; }
+.tooltip-status.waiting { color: #FFC107; }
+
+.tooltip-name {
+  font-weight: bold;
+  color: #fff;
+  font-size: 14px;
+}
+
+.tooltip-task {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.tooltip-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #888;
+}
+
+.tooltip-project {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 10px;
+  color: #666;
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .pixel-office {
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* Pixel art rendering */
+canvas {
+  image-rendering: -moz-crisp-edges;
+  image-rendering: -webkit-crisp-edges;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}

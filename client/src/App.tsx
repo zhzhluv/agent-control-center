@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
+import PixelOffice from './components/PixelOffice'
+
+// 참고: DEMO_MODE는 개발 시 데모 데이터 표시용 (현재 미사용)
 
 interface Agent {
   id: string
@@ -8,13 +11,14 @@ interface Agent {
   currentTask?: string
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }
   cost: number
+  projectPath?: string  // 서버에서 제공하는 프로젝트 경로
 }
 
 interface Session {
   id: string
-  workingDir: string
+  projectPath: string   // 서버: projectPath (workingDir에서 변경)
   agents: Agent[]
-  status: 'active' | 'paused' | 'stopped'
+  isActive: boolean     // 서버: isActive (status에서 변경)
   lastActivity: string
 }
 
@@ -52,7 +56,7 @@ export default function App() {
     metrics: initialMetrics,
     output: []
   })
-  const [command, setCommand] = useState('')
+  // const [command, setCommand] = useState('') // 읽기 전용 MVP에서 비활성화
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('authToken') || '')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [activeView, setActiveView] = useState<'dashboard' | 'terminal' | 'settings'>('dashboard')
@@ -64,7 +68,11 @@ export default function App() {
     if (!authToken) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}?token=${authToken}`
+    // 개발 모드에서는 9876 포트로 직접 연결
+    const host = import.meta.env.DEV
+      ? `${window.location.hostname}:9876`
+      : window.location.host
+    const wsUrl = `${protocol}//${host}?token=${authToken}`
 
     const ws = new WebSocket(wsUrl)
 
@@ -77,6 +85,7 @@ export default function App() {
     ws.onmessage = (event) => {
       const { type, data } = JSON.parse(event.data)
 
+      // 읽기 전용 MVP: init, status_update, agent_updated, session_updated, error만 처리
       switch (type) {
         case 'init':
         case 'status_update':
@@ -87,29 +96,26 @@ export default function App() {
             metrics: data.metrics || s.metrics
           }))
           break
-        case 'output':
+        case 'agent_updated':
+          // 개별 에이전트 업데이트
           setState(s => ({
             ...s,
-            output: [...s.output.slice(-100), data.output]
+            agents: s.agents.some(a => a.id === data.id)
+              ? s.agents.map(a => a.id === data.id ? data : a)
+              : [...s.agents, data]
           }))
           break
-        case 'session_started':
+        case 'session_updated':
+          // 개별 세션 업데이트
           setState(s => ({
             ...s,
-            sessions: [...s.sessions, data]
+            sessions: s.sessions.some(sess => sess.id === data.id)
+              ? s.sessions.map(sess => sess.id === data.id ? data : sess)
+              : [...s.sessions, data]
           }))
           break
-        case 'session_stopped':
-          setState(s => ({
-            ...s,
-            sessions: s.sessions.filter(s => s.id !== data.sessionId)
-          }))
-          break
-        case 'agent_spawned':
-          setState(s => ({
-            ...s,
-            agents: [...s.agents, data.agent]
-          }))
+        case 'error':
+          console.error('Server error:', data.message)
           break
       }
     }
@@ -142,34 +148,8 @@ export default function App() {
     }
   }, [state.output])
 
-  const sendCommand = () => {
-    if (!command.trim() || !wsRef.current) return
-
-    wsRef.current.send(JSON.stringify({
-      type: 'command',
-      payload: { command }
-    }))
-
-    setState(s => ({
-      ...s,
-      output: [...s.output, `> ${command}`]
-    }))
-    setCommand('')
-  }
-
-  const startNewSession = (workingDir?: string) => {
-    wsRef.current?.send(JSON.stringify({
-      type: 'start_session',
-      payload: { workingDir: workingDir || '~' }
-    }))
-  }
-
-  const stopSession = (sessionId: string) => {
-    wsRef.current?.send(JSON.stringify({
-      type: 'stop_session',
-      payload: { sessionId }
-    }))
-  }
+  // 참고: 읽기 전용 MVP - 명령 실행, 세션 시작/중지 기능은 비활성화됨
+  // 추후 원격 제어 기능 추가 시 활성화 예정
 
   // Auth screen
   if (!isAuthenticated) {
@@ -243,7 +223,7 @@ export default function App() {
           className={activeView === 'terminal' ? 'active' : ''}
           onClick={() => setActiveView('terminal')}
         >
-          터미널
+          로그
         </button>
         <button
           className={activeView === 'settings' ? 'active' : ''}
@@ -257,41 +237,42 @@ export default function App() {
       <main className="main-content">
         {activeView === 'dashboard' && (
           <div className="dashboard">
-            {/* Sessions */}
+            {/* Pixel Office Visualization */}
+            <section className="section">
+              <h2>🏢 Office View</h2>
+              <PixelOffice agents={state.agents} />
+              {state.agents.length === 0 && (
+                <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '16px' }}>
+                  터미널에서 Claude Code를 실행하면 여기에 표시됩니다
+                </p>
+              )}
+            </section>
+
+            {/* Sessions - 읽기 전용 */}
             <section className="section">
               <div className="section-header">
                 <h2>세션</h2>
-                <button className="small primary" onClick={() => startNewSession()}>
-                  + 새 세션
-                </button>
+                <span className="text-dim" style={{ fontSize: '12px' }}>읽기 전용</span>
               </div>
 
               {state.sessions.length === 0 ? (
                 <div className="empty-state">
                   <p>실행 중인 세션이 없습니다</p>
-                  <button className="primary" onClick={() => startNewSession()}>
-                    새 세션 시작
-                  </button>
+                  <p className="text-dim" style={{ fontSize: '12px' }}>터미널에서 Claude Code를 실행하면 자동으로 감지됩니다</p>
                 </div>
               ) : (
                 <div className="session-list">
                   {state.sessions.map(session => (
                     <div key={session.id} className="session-card">
                       <div className="session-info">
-                        <span className={`status-badge ${session.status}`}>
-                          {session.status}
+                        <span className={`status-badge ${session.isActive ? 'active' : 'stopped'}`}>
+                          {session.isActive ? 'active' : 'stopped'}
                         </span>
-                        <span className="session-dir">{session.workingDir}</span>
+                        <span className="session-dir">{session.projectPath}</span>
                       </div>
                       <div className="session-agents">
                         {session.agents.length} 에이전트
                       </div>
-                      <button
-                        className="small danger"
-                        onClick={() => stopSession(session.id)}
-                      >
-                        중지
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -333,21 +314,16 @@ export default function App() {
         {activeView === 'terminal' && (
           <div className="terminal-view">
             <div className="terminal-output" ref={outputRef}>
-              {state.output.map((line, i) => (
-                <pre key={i}>{line}</pre>
-              ))}
-            </div>
-            <div className="terminal-input">
-              <input
-                type="text"
-                placeholder="명령어 입력..."
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && sendCommand()}
-              />
-              <button className="primary" onClick={sendCommand}>
-                전송
-              </button>
+              {state.output.length === 0 ? (
+                <div className="empty-state" style={{ padding: '40px' }}>
+                  <p>아직 로그가 없습니다</p>
+                  <p className="text-dim" style={{ fontSize: '12px' }}>Claude 세션 활동이 여기에 표시됩니다</p>
+                </div>
+              ) : (
+                state.output.map((line, i) => (
+                  <pre key={i}>{line}</pre>
+                ))
+              )}
             </div>
           </div>
         )}

@@ -36,6 +36,15 @@ export interface SessionStartOptions {
   model?: 'opus' | 'sonnet' | 'haiku';
 }
 
+export interface Metrics {
+  totalTokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  totalCost: number;
+  cacheHitRate: number;
+  activeAgents: number;
+  totalAgents: number;
+  activeSessions: number;
+}
+
 export class ClaudeController extends EventEmitter {
   private sessions: Map<string, SessionInfo> = new Map();
   private processes: Map<string, ChildProcess> = new Map();
@@ -86,10 +95,21 @@ export class ClaudeController extends EventEmitter {
     };
 
     // Start Claude process
+    // PATH에 ~/.local/bin 추가 (Claude CLI 위치)
+    const localBin = path.join(os.homedir(), '.local', 'bin');
+    const envPath = process.env.PATH || '';
+    const newPath = envPath.includes(localBin) ? envPath : `${localBin}:${envPath}`;
+
+    console.log('Spawning claude with args:', args, 'in', workingDir);
+
     const proc = spawn('claude', args, {
       cwd: workingDir,
-      env: { ...process.env },
+      env: { ...process.env, PATH: newPath },
       stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    proc.on('error', (err) => {
+      console.error('Failed to spawn claude:', err);
     });
 
     this.processes.set(sessionId, proc);
@@ -215,7 +235,7 @@ export class ClaudeController extends EventEmitter {
   async refreshStatus(): Promise<{
     sessions: SessionInfo[];
     agents: AgentInfo[];
-    metrics: ReturnType<typeof this.getMetrics>;
+    metrics: Metrics;
   }> {
     // Try to get status from claude daemon
     try {
