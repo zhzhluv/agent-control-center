@@ -100,7 +100,7 @@ if [ -d "$INSTALL_DIR" ]; then
     git pull
 else
     echo "Agent Control Center 다운로드 중..."
-    git clone https://github.com/YOUR_USERNAME/agent-control-center.git "$INSTALL_DIR"
+    git clone https://github.com/zhzhluv/agent-control-center.git "$INSTALL_DIR"
     cd "$INSTALL_DIR"
 fi
 

@@ -12,7 +12,7 @@
 ## 빠른 시작 (맥미니)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/agent-control-center/main/scripts/setup-mac.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zhzhluv/agent-control-center/main/scripts/setup-mac.sh | bash
 ```
 
 ## 수동 설치
@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/agent-control-center/
 
 ```bash
 # 1. 저장소 클론
-git clone https://github.com/YOUR_USERNAME/agent-control-center.git
+git clone https://github.com/zhzhluv/agent-control-center.git
 cd agent-control-center
 
 # 2. 의존성 설치
