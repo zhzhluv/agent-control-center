@@ -11,7 +11,10 @@
     "build:server": "tsc -p server/tsconfig.json",
     "build:client": "cd client && npm run build",
     "start": "node server/dist/index.js",
-    "setup": "npm install && cd client && npm install"
+    "setup": "npm install && cd client && npm install",
+    "test": "npm run build && ./smoke-test.sh && ./test-reports-api.sh",
+    "test:smoke": "./smoke-test.sh",
+    "test:reports": "./test-reports-api.sh"
   },
   "dependencies": {
     "express": "^4.21.0",
