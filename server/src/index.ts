@@ -75,6 +75,18 @@ const monitor = new ClaudeMonitor();
 // Store connected clients
 const clients = new Set<WebSocket>();
 
+// Server start time for uptime calculation
+const SERVER_START_TIME = new Date();
+
+// Track connection statistics
+// Note: lastClientMessageAt tracks when server received messages FROM clients (client→server)
+const connectionStats = {
+  lastConnected: null as Date | null,
+  lastClientMessageAt: null as Date | null,  // renamed for clarity: client→server message timestamp
+  totalConnections: 0,
+  totalMessages: 0,
+};
+
 // Broadcast to all connected clients
 function broadcast(data: object) {
   const message = JSON.stringify(data);
@@ -139,6 +151,10 @@ wss.on('connection', (ws, req) => {
   console.log('Client connected');
   clients.add(ws);
 
+  // Update connection statistics
+  connectionStats.lastConnected = new Date();
+  connectionStats.totalConnections++;
+
   // Send current state
   const status = monitor.getStatus();
   ws.send(JSON.stringify({
@@ -148,9 +164,17 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', async (message) => {
     try {
+      connectionStats.lastClientMessageAt = new Date();
+      connectionStats.totalMessages++;
+
       const { type, payload } = JSON.parse(message.toString());
 
       switch (type) {
+        case 'ping':
+          // Respond to heartbeat ping with pong
+          ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+
         case 'refresh':
           // 상태 새로고침 (status_update로 응답하여 클라이언트 핸들러와 일치)
           const currentStatus = monitor.getStatus();
@@ -193,6 +217,72 @@ app.get('/api/agents', auth.verify, (req, res) => {
 
 app.get('/api/metrics', auth.verify, (req, res) => {
   res.json(monitor.getStatus().metrics);
+});
+
+// Helper: count .md files in .agents directory
+function countReports(): number {
+  try {
+    if (!existsSync(AGENTS_DIR)) return 0;
+
+    let count = 0;
+    function scan(dir: string) {
+      const entries = readdirSync(dir);
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry);
+        const stat = statSync(fullPath);
+        if (stat.isDirectory()) {
+          scan(fullPath);
+        } else if (stat.isFile() && entry.endsWith('.md')) {
+          count++;
+        }
+      }
+    }
+    scan(AGENTS_DIR);
+    return count;
+  } catch {
+    return 0;
+  }
+}
+
+// Diagnostics API
+app.get('/api/diagnostics', auth.verify, (req, res) => {
+  const status = monitor.getStatus();
+  const uptime = process.uptime();
+
+  // Count watched projects (unique project paths from sessions)
+  const watchedProjects = new Set(
+    status.sessions.map(session => session.projectPath)
+  ).size;
+
+  // Count total events (sum of recent activity across all agents)
+  const totalEvents = status.agents.reduce(
+    (sum, agent) => sum + (agent.recentActivity?.length || 0),
+    0
+  );
+
+  // Count actual reports in .agents directory
+  const reportsCount = countReports();
+
+  res.json({
+    uptime,
+    startTime: SERVER_START_TIME.toISOString(),
+    activeSessions: status.metrics.activeSessions,
+    totalSessions: status.sessions.length,
+    activeAgents: status.metrics.activeAgents,
+    totalAgents: status.metrics.totalAgents,
+    watchedProjects,
+    totalEvents,
+    reportsCount,
+    clientVersion: '1.0.0',
+    connectionStats: {
+      activeConnections: clients.size,
+      lastConnected: connectionStats.lastConnected?.toISOString() || null,
+      // Note: This is when server last received a message FROM a client (client→server)
+      lastClientMessageAt: connectionStats.lastClientMessageAt?.toISOString() || null,
+      totalConnections: connectionStats.totalConnections,
+      totalMessages: connectionStats.totalMessages,
+    },
+  });
 });
 
 // Reports API

@@ -896,6 +896,67 @@ button.danger {
   color: #111722;
 }
 
+/* Diagnostics Panel */
+.diagnostics-panel {
+  margin-top: 14px;
+}
+
+.diagnostics-panel .panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.diagnostics-panel .panel-head button.refresh-btn {
+  min-height: 34px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.diagnostics-panel .panel-head button.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.diagnostics-panel .panel-head button.refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.diagnostics-section {
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.diagnostics-section:last-child {
+  border-bottom: none;
+}
+
+.diagnostics-section h3 {
+  margin: 0 0 12px;
+  color: #7fdccf;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.status-connected {
+  color: #30c3a8 !important;
+}
+
+.status-reconnecting {
+  color: #ffb366 !important;
+}
+
+.status-disconnected {
+  color: #f06767 !important;
+}
+
 /* Reports */
 .reports-panel {
   height: 100%;
@@ -1457,4 +1518,48 @@ button.danger {
   line-height: 1.7;
   word-wrap: break-word;
   tab-size: 2;
+}
+
+/* Stale status styles */
+.profile-dot.stale {
+  opacity: 0.4;
+  box-shadow: none !important;
+  background: #6a6a7a !important;
+}
+
+.status-pill.stale {
+  opacity: 0.6;
+}
+
+.status-pill.stale-warning {
+  background: rgba(255, 152, 0, 0.18);
+  color: #ffb366;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.stale-notice {
+  display: block;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 152, 0, 0.12);
+  color: #ffb366;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.staff-row.stale {
+  opacity: 0.6;
+  border-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+.staff-row.stale strong,
+.staff-row.stale small {
+  color: var(--text-secondary);
+}
+
+.stale-text {
+  color: var(--text-secondary) !important;
+  opacity: 0.7;
 }

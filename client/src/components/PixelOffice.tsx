@@ -20,6 +20,7 @@ export interface Agent {
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }
   cost: number
   projectPath?: string
+  isStale?: boolean
 }
 
 interface PixelOfficeProps {
@@ -343,10 +344,15 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     const bounce = Math.sin(frame * 0.1 + x) * 2
     const agentY = y + bounce
 
-    // 상태 색상
-    const statusColor = agent.status === 'working' ? COLORS.working
+    // 상태 색상 (stale이면 회색)
+    const statusColor = agent.isStale ? '#6a6a7a'
+      : agent.status === 'working' ? COLORS.working
       : agent.status === 'idle' ? COLORS.idle
       : COLORS.waiting
+
+    // Stale 상태면 전체 반투명
+    const opacity = agent.isStale ? 0.4 : 1.0
+    ctx.globalAlpha = opacity
 
     // 그림자
     ctx.fillStyle = 'rgba(0,0,0,0.3)'
@@ -409,6 +415,9 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
       ctx.arc(x, agentY + 2, 25, 0, Math.PI * 2)
       ctx.stroke()
     }
+
+    // Reset opacity
+    ctx.globalAlpha = 1.0
   }
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
