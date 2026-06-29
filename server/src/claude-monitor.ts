@@ -10,6 +10,7 @@ export interface ActivityLog {
   type: 'tool_use' | 'message' | 'result';
   tool?: string;
   summary: string;
+  is_error?: boolean;  // 도구 결과가 에러인 경우
 }
 
 export interface AgentInfo {
@@ -213,6 +214,7 @@ export class ClaudeMonitor extends EventEmitter {
                   timestamp: new Date(data.timestamp || Date.now()),
                   type: 'result',
                   summary: block.is_error ? '❌ Error' : '✓ Success',
+                  is_error: block.is_error || false,
                 });
               }
             }

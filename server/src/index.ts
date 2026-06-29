@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import path from 'path';
 import crypto from 'crypto';
-import { writeFileSync } from 'fs';
+import { writeFileSync, readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { ClaudeMonitor } from './claude-monitor.js';
 import { AuthMiddleware } from './auth.js';
@@ -193,6 +193,110 @@ app.get('/api/agents', auth.verify, (req, res) => {
 
 app.get('/api/metrics', auth.verify, (req, res) => {
   res.json(monitor.getStatus().metrics);
+});
+
+// Reports API
+const AGENTS_DIR = path.join(__dirname, '../../.agents');
+
+// Security: validate path to prevent directory traversal
+function isValidReportPath(relativePath: string): boolean {
+  // Reject paths with '..'
+  if (relativePath.includes('..')) {
+    return false;
+  }
+
+  // Reject absolute paths
+  if (path.isAbsolute(relativePath)) {
+    return false;
+  }
+
+  // Must be .md file
+  if (!relativePath.endsWith('.md')) {
+    return false;
+  }
+
+  // Resolve and verify it stays within .agents directory
+  const fullPath = path.resolve(AGENTS_DIR, relativePath);
+  const normalizedAgentsDir = path.resolve(AGENTS_DIR);
+
+  return fullPath.startsWith(normalizedAgentsDir + path.sep) || fullPath === normalizedAgentsDir;
+}
+
+// GET /api/reports - list all .md files in .agents directory
+app.get('/api/reports', auth.verify, (req, res) => {
+  try {
+    if (!existsSync(AGENTS_DIR)) {
+      return res.json({ reports: [] });
+    }
+
+    const reports: Array<{ path: string; name: string; size: number; modified: string }> = [];
+
+    function scanDirectory(dir: string, prefix: string = '') {
+      const entries = readdirSync(dir);
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry);
+        const stat = statSync(fullPath);
+        const relativePath = path.join(prefix, entry);
+
+        if (stat.isDirectory()) {
+          scanDirectory(fullPath, relativePath);
+        } else if (stat.isFile() && entry.endsWith('.md')) {
+          reports.push({
+            path: relativePath,
+            name: entry,
+            size: stat.size,
+            modified: stat.mtime.toISOString(),
+          });
+        }
+      }
+    }
+
+    scanDirectory(AGENTS_DIR);
+
+    // Sort by modified date (newest first)
+    reports.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+
+    res.json({ reports });
+  } catch (err) {
+    console.error('Error listing reports:', err);
+    res.status(500).json({ error: 'Failed to list reports' });
+  }
+});
+
+// GET /api/reports/:path - get content of specific report
+app.get('/api/reports/:path(*)', auth.verify, (req, res) => {
+  try {
+    const relativePath = req.params.path;
+
+    // Security validation
+    if (!isValidReportPath(relativePath)) {
+      return res.status(403).json({ error: 'Invalid report path' });
+    }
+
+    const fullPath = path.join(AGENTS_DIR, relativePath);
+
+    if (!existsSync(fullPath)) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const stat = statSync(fullPath);
+    if (!stat.isFile()) {
+      return res.status(403).json({ error: 'Not a file' });
+    }
+
+    const content = readFileSync(fullPath, 'utf-8');
+
+    res.json({
+      path: relativePath,
+      content,
+      size: stat.size,
+      modified: stat.mtime.toISOString(),
+    });
+  } catch (err) {
+    console.error('Error reading report:', err);
+    res.status(500).json({ error: 'Failed to read report' });
+  }
 });
 
 // Serve client app for all other routes

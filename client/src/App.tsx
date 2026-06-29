@@ -7,6 +7,7 @@ interface ActivityLog {
   type: 'tool_use' | 'message' | 'result'
   tool?: string
   summary: string
+  is_error?: boolean
 }
 
 interface Agent {
@@ -45,7 +46,6 @@ interface AppState {
   sessions: Session[]
   agents: Agent[]
   metrics: Metrics
-  output: string[]
 }
 
 interface TimelineEvent {
@@ -55,6 +55,20 @@ interface TimelineEvent {
   type: ActivityLog['type']
   summary: string
   tool?: string
+}
+
+interface Report {
+  path: string
+  name: string
+  size: number
+  modified: string
+}
+
+interface ReportContent {
+  path: string
+  content: string
+  size: number
+  modified: string
 }
 
 const initialMetrics: Metrics = {
@@ -79,10 +93,66 @@ function formatTime(value?: string) {
   return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function formatDate(isoString: string): string {
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function getStatusLabel(status: Agent['status']) {
   if (status === 'working') return '작업 중'
   if (status === 'waiting') return '대기'
   return '휴식'
+}
+
+type DerivedStatus =
+  | 'error'
+  | 'approval_needed'
+  | 'blocked'
+  | 'recently_active'
+  | null
+
+function getDerivedStatus(agent: Agent): DerivedStatus {
+  const now = new Date().getTime()
+
+  if (agent.recentActivity && agent.recentActivity.length > 0) {
+    const lastActivity = agent.recentActivity[agent.recentActivity.length - 1]
+    const lastActivityTime = new Date(lastActivity.timestamp).getTime()
+    const timeSinceActivity = (now - lastActivityTime) / 1000
+
+    if (lastActivity.type === 'result' && lastActivity.is_error) {
+      if (agent.status === 'idle') {
+        return 'blocked'
+      }
+      return 'error'
+    }
+
+    if (timeSinceActivity < 5 && agent.status === 'working') {
+      return 'recently_active'
+    }
+  }
+
+  return null
+}
+
+function getDerivedStatusLabel(derived: DerivedStatus): string | null {
+  if (derived === 'error') return '오류 발생'
+  if (derived === 'approval_needed') return '승인 대기'
+  if (derived === 'blocked') return '차단됨'
+  if (derived === 'recently_active') return '활발함'
+  return null
 }
 
 function getRole(agent: Agent) {
@@ -124,18 +194,23 @@ export default function App() {
     sessions: [],
     agents: [],
     metrics: initialMetrics,
-    output: [],
   })
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('authToken') || '')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [activeView, setActiveView] = useState<'ops' | 'logs' | 'settings'>('ops')
+  const [activeView, setActiveView] = useState<'ops' | 'logs' | 'reports' | 'settings'>('ops')
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [connectionError, setConnectionError] = useState('')
+
+  // Reports state
+  const [reports, setReports] = useState<Report[]>([])
+  const [selectedReport, setSelectedReport] = useState<ReportContent | null>(null)
+  const [loadingReports, setLoadingReports] = useState(false)
+  const [loadingContent, setLoadingContent] = useState(false)
+  const [reportsError, setReportsError] = useState('')
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
   const shouldReconnectRef = useRef(true)
-  const outputRef = useRef<HTMLDivElement>(null)
 
   const selectedAgent = useMemo(
     () => state.agents.find(agent => agent.id === selectedAgentId) || state.agents[0] || null,
@@ -146,6 +221,68 @@ export default function App() {
     () => new Set(state.sessions.map(session => session.projectPath)).size,
     [state.sessions],
   )
+
+  const fetchReports = useCallback(async () => {
+    if (!authToken) return
+
+    setLoadingReports(true)
+    setReportsError('')
+
+    try {
+      const protocol = window.location.protocol
+      const host = import.meta.env.DEV
+        ? `${window.location.hostname}:9876`
+        : window.location.host
+      const url = `${protocol}//${host}/api/reports`
+
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      setReports(data.reports || [])
+    } catch (err) {
+      setReportsError('보고서 목록을 가져올 수 없습니다.')
+      setReports([])
+    } finally {
+      setLoadingReports(false)
+    }
+  }, [authToken])
+
+  const fetchReportContent = useCallback(async (reportPath: string) => {
+    if (!authToken) return
+
+    setLoadingContent(true)
+    setReportsError('')
+
+    try {
+      const protocol = window.location.protocol
+      const host = import.meta.env.DEV
+        ? `${window.location.hostname}:9876`
+        : window.location.host
+      const url = `${protocol}//${host}/api/reports/${encodeURIComponent(reportPath)}`
+
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      setSelectedReport(data)
+    } catch (err) {
+      setReportsError('보고서를 읽을 수 없습니다.')
+      setSelectedReport(null)
+    } finally {
+      setLoadingContent(false)
+    }
+  }, [authToken])
 
   const connect = useCallback(() => {
     if (!authToken) return
@@ -273,11 +410,13 @@ export default function App() {
     }
   }, [authToken, connect])
 
+
+  // Load reports when switching to reports view
   useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight
+    if (activeView === 'reports' && isAuthenticated) {
+      fetchReports()
     }
-  }, [state.output])
+  }, [activeView, isAuthenticated, fetchReports])
 
   if (!isAuthenticated) {
     return (
@@ -341,6 +480,7 @@ export default function App() {
       <nav className="ops-tabs" aria-label="view navigation">
         <button className={activeView === 'ops' ? 'active' : ''} onClick={() => setActiveView('ops')}>운영실</button>
         <button className={activeView === 'logs' ? 'active' : ''} onClick={() => setActiveView('logs')}>로그</button>
+        <button className={activeView === 'reports' ? 'active' : ''} onClick={() => setActiveView('reports')}>보고서</button>
         <button className={activeView === 'settings' ? 'active' : ''} onClick={() => setActiveView('settings')}>설정</button>
       </nav>
 
@@ -381,7 +521,14 @@ export default function App() {
                     <strong>{selectedAgent.name}</strong>
                     <p>{getRole(selectedAgent)} · {selectedAgent.agentType === 'sub' ? '서브 에이전트' : '메인 에이전트'}</p>
                   </div>
-                  <span className={`status-pill ${selectedAgent.status}`}>{getStatusLabel(selectedAgent.status)}</span>
+                  <div className="status-pills">
+                    <span className={`status-pill ${selectedAgent.status}`}>{getStatusLabel(selectedAgent.status)}</span>
+                    {(() => {
+                      const derived = getDerivedStatus(selectedAgent)
+                      const label = getDerivedStatusLabel(derived)
+                      return label ? <span className={`status-pill derived ${derived}`}>{label}</span> : null
+                    })()}
+                  </div>
                 </div>
 
                 <div className="task-card">
@@ -454,21 +601,25 @@ export default function App() {
                   <p>터미널에서 Claude Code 작업을 시작하면 자동으로 감지됩니다.</p>
                 </div>
               ) : (
-                state.agents.map(agent => (
-                  <button
-                    type="button"
-                    key={agent.id}
-                    className={`staff-row ${agent.status} ${selectedAgent?.id === agent.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedAgentId(agent.id)}
-                  >
-                    <span className={`profile-dot ${agent.status}`} />
-                    <span>
-                      <strong>{agent.name}</strong>
-                      <small>{getRole(agent)} · {shortProject(agent.projectPath)}</small>
-                    </span>
-                    <em>{getStatusLabel(agent.status)}</em>
-                  </button>
-                ))
+                state.agents.map(agent => {
+                  const derived = getDerivedStatus(agent)
+                  const derivedLabel = getDerivedStatusLabel(derived)
+                  return (
+                    <button
+                      type="button"
+                      key={agent.id}
+                      className={`staff-row ${agent.status} ${derived ? `derived-${derived}` : ''} ${selectedAgent?.id === agent.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedAgentId(agent.id)}
+                    >
+                      <span className={`profile-dot ${agent.status} ${derived ? `derived-${derived}` : ''}`} />
+                      <span>
+                        <strong>{agent.name}</strong>
+                        <small>{getRole(agent)} · {shortProject(agent.projectPath)}{derivedLabel ? ` · ${derivedLabel}` : ''}</small>
+                      </span>
+                      <em>{getStatusLabel(agent.status)}</em>
+                    </button>
+                  )
+                })
               )}
             </div>
           </section>
@@ -513,15 +664,98 @@ export default function App() {
                 <h2>시스템 로그</h2>
               </div>
             </div>
-            <div className="terminal-output" ref={outputRef}>
-              {state.output.length === 0 ? (
+            <div className="terminal-output">
+              {timeline.length === 0 ? (
                 <div className="empty-panel">
                   <strong>로그 대기 중</strong>
                   <p>Claude 세션 활동 로그가 준비되면 이곳에 표시됩니다.</p>
                 </div>
               ) : (
-                state.output.map((line, index) => <pre key={`${line}-${index}`}>{line}</pre>)
+                timeline.map(event => {
+                  const agent = state.agents.find(a => a.name === event.agentName)
+                  const projectName = shortProject(agent?.projectPath)
+                  return (
+                    <div className="log-entry" key={event.id}>
+                      <span className="log-time">{formatTime(event.timestamp)}</span>
+                      <span className="log-agent">{event.agentName}</span>
+                      <span className="log-project">{projectName}</span>
+                      <span className={`log-type ${event.type}`}>{event.type}</span>
+                      {event.tool && <span className="log-tool">{event.tool}</span>}
+                      <span className="log-summary">{event.summary}</span>
+                    </div>
+                  )
+                })
               )}
+            </div>
+          </section>
+        </main>
+      )}
+
+      {activeView === 'reports' && (
+        <main className="simple-page">
+          <section className="reports-panel">
+            <div className="panel-head">
+              <div>
+                <p className="eyebrow">Reports</p>
+                <h2>에이전트 보고서</h2>
+              </div>
+              <button type="button" onClick={fetchReports} disabled={loadingReports}>
+                {loadingReports ? '불러오는 중...' : '새로고침'}
+              </button>
+            </div>
+
+            {reportsError && (
+              <div className="reports-error">
+                <span>{reportsError}</span>
+              </div>
+            )}
+
+            <div className="reports-layout">
+              <div className="reports-list">
+                {loadingReports ? (
+                  <div className="empty-panel">
+                    <strong>불러오는 중...</strong>
+                  </div>
+                ) : reports.length === 0 ? (
+                  <div className="empty-panel">
+                    <strong>보고서 없음</strong>
+                    <p>.agents 폴더에 마크다운 파일이 없습니다.</p>
+                  </div>
+                ) : (
+                  reports.map(report => (
+                    <button
+                      key={report.path}
+                      type="button"
+                      className={`report-item ${selectedReport?.path === report.path ? 'selected' : ''}`}
+                      onClick={() => fetchReportContent(report.path)}
+                    >
+                      <strong>{report.name}</strong>
+                      <small>{formatFileSize(report.size)} · {formatDate(report.modified)}</small>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <div className="reports-content">
+                {loadingContent ? (
+                  <div className="empty-panel">
+                    <strong>읽는 중...</strong>
+                  </div>
+                ) : selectedReport ? (
+                  <div className="report-viewer">
+                    <div className="report-header">
+                      <h3>{selectedReport.path}</h3>
+                      <small>{formatFileSize(selectedReport.size)} · {formatDate(selectedReport.modified)}</small>
+                    </div>
+                    <pre className="report-content">{selectedReport.content}</pre>
+                  </div>
+                ) : (
+                  <div className="empty-panel">
+                    <strong>보고서를 선택하세요</strong>
+                    <p>왼쪽 목록에서 보고서를 선택하면 내용이 표시됩니다.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         </main>
