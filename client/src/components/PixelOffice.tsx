@@ -1,11 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './PixelOffice.css'
+
+interface ActivityLog {
+  timestamp: string
+  type: 'tool_use' | 'message' | 'result'
+  tool?: string
+  summary: string
+}
 
 export interface Agent {
   id: string
   name: string
   status: 'idle' | 'working' | 'waiting'
+  agentType?: 'main' | 'sub'
   currentTask?: string
+  currentTaskFull?: string
+  recentTools?: string[]
+  recentActivity?: ActivityLog[]
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }
   cost: number
   projectPath?: string
@@ -13,6 +24,8 @@ export interface Agent {
 
 interface PixelOfficeProps {
   agents: Agent[]
+  selectedAgentId?: string | null
+  onSelectAgent?: (agentId: string) => void
 }
 
 interface ProjectRoom {
@@ -42,7 +55,7 @@ const COLORS = {
   textDim: '#888',
 }
 
-export default function PixelOffice({ agents }: PixelOfficeProps) {
+export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: PixelOfficeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hoveredAgent, setHoveredAgent] = useState<Agent | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
@@ -50,7 +63,7 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
   const animationFrameId = useRef<number>()
 
   // 프로젝트별로 에이전트 그룹화
-  const projectRooms: ProjectRoom[] = (() => {
+  const projectRooms: ProjectRoom[] = useMemo(() => {
     const projectMap = new Map<string, Agent[]>()
 
     agents.forEach(agent => {
@@ -66,15 +79,17 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
       path,
       agents
     }))
-  })()
+  }, [agents])
 
   const ROOM_WIDTH = 400
   const ROOM_HEIGHT = 300
   const ROOM_PADDING = 20
   const ROOMS_PER_ROW = 2
 
-  const canvasWidth = Math.min(projectRooms.length, ROOMS_PER_ROW) * (ROOM_WIDTH + ROOM_PADDING) + ROOM_PADDING
-  const canvasHeight = Math.ceil(projectRooms.length / ROOMS_PER_ROW) * (ROOM_HEIGHT + ROOM_PADDING) + ROOM_PADDING
+  const calculatedWidth = Math.min(Math.max(projectRooms.length, 1), ROOMS_PER_ROW) * (ROOM_WIDTH + ROOM_PADDING) + ROOM_PADDING
+  const calculatedHeight = Math.ceil(Math.max(projectRooms.length, 1) / ROOMS_PER_ROW) * (ROOM_HEIGHT + ROOM_PADDING) + ROOM_PADDING
+  const canvasWidth = Math.max(960, calculatedWidth)
+  const canvasHeight = Math.max(540, calculatedHeight)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -90,11 +105,7 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
       ctx.fillRect(0, 0, canvasWidth || 800, canvasHeight || 400)
 
       if (projectRooms.length === 0) {
-        // 빈 상태
-        ctx.fillStyle = COLORS.textDim
-        ctx.font = '16px "Courier New", monospace'
-        ctx.textAlign = 'center'
-        ctx.fillText('Waiting for Claude sessions...', (canvasWidth || 800) / 2, (canvasHeight || 400) / 2)
+        renderEmptyOffice(ctx, canvasWidth, canvasHeight)
       } else {
         // 각 프로젝트 방 렌더링
         projectRooms.forEach((room, index) => {
@@ -117,7 +128,54 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
         cancelAnimationFrame(animationFrameId.current)
       }
     }
-  }, [projectRooms, canvasWidth, canvasHeight])
+  }, [projectRooms, canvasWidth, canvasHeight, selectedAgentId])
+
+  const renderEmptyOffice = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ) => {
+    ctx.fillStyle = COLORS.floor
+    ctx.fillRect(0, 0, width, height)
+
+    const tileSize = 32
+    for (let y = 0; y < height; y += tileSize) {
+      for (let x = 0; x < width; x += tileSize) {
+        ctx.fillStyle = ((x / tileSize) + (y / tileSize)) % 2 === 0 ? COLORS.floor : COLORS.floorAlt
+        ctx.fillRect(x, y, tileSize, tileSize)
+      }
+    }
+
+    ctx.fillStyle = COLORS.wall
+    ctx.fillRect(0, 0, width, 72)
+    ctx.fillStyle = COLORS.wallTop
+    ctx.fillRect(0, 0, width, 8)
+
+    // 빈 책상 배치
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 5; col++) {
+        const deskX = 120 + col * 142
+        const deskY = 150 + row * 118
+        ctx.fillStyle = COLORS.desk
+        ctx.fillRect(deskX, deskY + 20, 70, 28)
+        ctx.fillStyle = COLORS.deskTop
+        ctx.fillRect(deskX - 4, deskY + 14, 78, 10)
+        ctx.fillStyle = COLORS.monitor
+        ctx.fillRect(deskX + 24, deskY, 22, 16)
+        ctx.fillStyle = '#273348'
+        ctx.fillRect(deskX + 27, deskY + 3, 16, 10)
+      }
+    }
+
+    ctx.fillStyle = COLORS.text
+    ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('감시 대기 중', width / 2, height - 130)
+
+    ctx.fillStyle = COLORS.textDim
+    ctx.font = '15px -apple-system, BlinkMacSystemFont, sans-serif'
+    ctx.fillText('Claude Code 세션이 시작되면 직원이 이 운영실에 배치됩니다.', width / 2, height - 102)
+  }
 
   const renderRoom = (
     ctx: CanvasRenderingContext2D,
@@ -299,6 +357,14 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
       ctx.fillStyle = '#333'
       ctx.fillRect(x - 10 + typingPhase * 4, agentY + 12, 3, 3)
     }
+
+    if (agent.id === selectedAgentId) {
+      ctx.strokeStyle = '#7fdccf'
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.arc(x, agentY + 2, 25, 0, Math.PI * 2)
+      ctx.stroke()
+    }
   }
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -306,10 +372,13 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
     if (!canvas) return
 
     const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width)
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height)
 
-    setMousePos({ x, y })
+    setMousePos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    })
 
     // 에이전트 호버 감지
     let found: Agent | null = null
@@ -333,6 +402,12 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
     setHoveredAgent(found)
   }
 
+  const handleClick = () => {
+    if (hoveredAgent && onSelectAgent) {
+      onSelectAgent(hoveredAgent.id)
+    }
+  }
+
   return (
     <div className="pixel-office">
       <canvas
@@ -340,6 +415,7 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
         width={canvasWidth || 800}
         height={canvasHeight || 400}
         onMouseMove={handleMouseMove}
+        onClick={handleClick}
         onMouseLeave={() => setHoveredAgent(null)}
         className="office-canvas"
       />
@@ -365,16 +441,31 @@ export default function PixelOffice({ agents }: PixelOfficeProps) {
           <div className="tooltip-header">
             <span className={`tooltip-status ${hoveredAgent.status}`}>●</span>
             <span className="tooltip-name">{hoveredAgent.name}</span>
+            <span className={`tooltip-type ${hoveredAgent.agentType || 'main'}`}>
+              {hoveredAgent.agentType === 'sub' ? 'SUB' : 'MAIN'}
+            </span>
           </div>
           {hoveredAgent.currentTask && (
             <div className="tooltip-task">{hoveredAgent.currentTask}</div>
           )}
           <div className="tooltip-stats">
-            <span>Tokens: {((hoveredAgent.tokens.input + hoveredAgent.tokens.output) / 1000).toFixed(1)}k</span>
-            <span>Cost: ${hoveredAgent.cost.toFixed(4)}</span>
+            <span>In: {(hoveredAgent.tokens.input / 1000).toFixed(1)}k</span>
+            <span>Out: {(hoveredAgent.tokens.output / 1000).toFixed(1)}k</span>
+            <span>${hoveredAgent.cost.toFixed(4)}</span>
           </div>
-          {hoveredAgent.projectPath && (
-            <div className="tooltip-project">{hoveredAgent.projectPath}</div>
+          {hoveredAgent.recentTools && hoveredAgent.recentTools.length > 0 && (
+            <div className="tooltip-tools">
+              {hoveredAgent.recentTools.slice(-4).map((tool, i) => (
+                <span key={i} className="tooltip-tool">{tool}</span>
+              ))}
+            </div>
+          )}
+          {hoveredAgent.recentActivity && hoveredAgent.recentActivity.length > 0 && (
+            <div className="tooltip-activity">
+              {hoveredAgent.recentActivity.slice(-3).reverse().map((act, i) => (
+                <div key={i} className="tooltip-activity-item">{act.summary}</div>
+              ))}
+            </div>
           )}
         </div>
       )}

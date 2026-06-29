@@ -5,16 +5,16 @@
 }
 
 :root {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --bg-card: #0f3460;
-  --accent: #e94560;
-  --accent-light: #ff6b6b;
-  --text-primary: #eee;
-  --text-secondary: #aaa;
-  --success: #4ade80;
-  --warning: #fbbf24;
-  --info: #60a5fa;
+  --bg-primary: #111722;
+  --bg-secondary: #182131;
+  --bg-card: #222c3d;
+  --accent: #f06767;
+  --accent-light: #ff8a8a;
+  --text-primary: #f4f7fb;
+  --text-secondary: #9aa7b8;
+  --success: #30c3a8;
+  --warning: #f0c75e;
+  --info: #6aa9ff;
 }
 
 html, body {

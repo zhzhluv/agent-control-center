@@ -4,11 +4,23 @@ import os from 'os';
 import { EventEmitter } from 'events';
 import readline from 'readline';
 
+// 최근 활동 기록
+export interface ActivityLog {
+  timestamp: Date;
+  type: 'tool_use' | 'message' | 'result';
+  tool?: string;
+  summary: string;
+}
+
 export interface AgentInfo {
   id: string;
   name: string;
   status: 'idle' | 'working' | 'waiting';
-  currentTask?: string;
+  agentType: 'main' | 'sub';           // 메인 vs 서브에이전트
+  currentTask?: string;                 // 짧은 요약 (UI 표시용)
+  currentTaskFull?: string;             // 전체 내용 (툴팁/상세용)
+  recentTools: string[];                // 최근 사용한 도구들
+  recentActivity: ActivityLog[];        // 최근 활동 로그
   tokens: {
     input: number;
     output: number;
@@ -127,15 +139,21 @@ export class ClaudeMonitor extends EventEmitter {
     const stat = fs.statSync(filePath);
 
     try {
-      // 마지막 몇 줄만 읽기 (효율성)
-      const lines = await this.readLastLines(filePath, 10);
+      // 마지막 몇 줄만 읽기 (효율성) - 활동 로그를 위해 더 많이 읽음
+      const lines = await this.readLastLines(filePath, 30);
 
       let sessionId = '';
       let agentId = '';
+      let parentSessionId = '';
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
+      let cacheReadTokens = 0;
+      let cacheWriteTokens = 0;
       let lastMessage = '';
+      let lastMessageFull = '';
       let cwd = '';
+      const recentTools: string[] = [];
+      const recentActivity: ActivityLog[] = [];
 
       for (const line of lines) {
         if (!line.trim()) continue;
@@ -145,20 +163,58 @@ export class ClaudeMonitor extends EventEmitter {
 
           if (data.sessionId) sessionId = data.sessionId;
           if (data.agentId) agentId = data.agentId;
+          if (data.parentSessionId) parentSessionId = data.parentSessionId;
           if (data.cwd) cwd = data.cwd;
 
           if (data.message?.usage) {
             totalInputTokens += data.message.usage.input_tokens || 0;
             totalOutputTokens += data.message.usage.output_tokens || 0;
+            cacheReadTokens += data.message.usage.cache_read_input_tokens || 0;
+            cacheWriteTokens += data.message.usage.cache_creation_input_tokens || 0;
           }
 
+          // 사용자 메시지를 현재 작업으로 사용
           if (data.message?.content && data.type === 'user') {
-            // 사용자 메시지를 현재 작업으로 사용
             const content = typeof data.message.content === 'string'
               ? data.message.content
               : data.message.content[0]?.text || '';
             if (content && content !== 'Warmup') {
-              lastMessage = content.slice(0, 100);
+              lastMessageFull = content;
+              lastMessage = content.length > 80 ? content.slice(0, 80) + '...' : content;
+            }
+          }
+
+          // 도구 사용 추출
+          if (data.message?.content && Array.isArray(data.message.content)) {
+            for (const block of data.message.content) {
+              if (block.type === 'tool_use') {
+                const toolName = block.name || 'unknown';
+                if (!recentTools.includes(toolName)) {
+                  recentTools.push(toolName);
+                  if (recentTools.length > 8) recentTools.shift();
+                }
+                // 활동 로그 추가
+                const toolSummary = this.summarizeToolUse(toolName, block.input);
+                recentActivity.push({
+                  timestamp: new Date(data.timestamp || Date.now()),
+                  type: 'tool_use',
+                  tool: toolName,
+                  summary: toolSummary,
+                });
+              }
+            }
+          }
+
+          // 도구 결과 추출
+          if (data.message?.content && Array.isArray(data.message.content)) {
+            for (const block of data.message.content) {
+              if (block.type === 'tool_result') {
+                recentActivity.push({
+                  timestamp: new Date(data.timestamp || Date.now()),
+                  type: 'result',
+                  summary: block.is_error ? '❌ Error' : '✓ Success',
+                });
+              }
             }
           }
         } catch (e) {
@@ -166,18 +222,28 @@ export class ClaudeMonitor extends EventEmitter {
         }
       }
 
+      // 최근 활동만 유지 (최대 10개)
+      const trimmedActivity = recentActivity.slice(-10);
+
       if (isAgent && agentId) {
+        // 에이전트 타입 결정: parentSessionId가 있으면 서브에이전트
+        const agentType: 'main' | 'sub' = parentSessionId ? 'sub' : 'main';
+
         // 에이전트 정보 업데이트
         const agent: AgentInfo = {
           id: agentId,
           name: this.getAgentName(agentId),
           status: 'working',
+          agentType,
           currentTask: lastMessage || 'Processing...',
+          currentTaskFull: lastMessageFull || undefined,
+          recentTools,
+          recentActivity: trimmedActivity,
           tokens: {
             input: totalInputTokens,
             output: totalOutputTokens,
-            cacheRead: 0,
-            cacheWrite: 0,
+            cacheRead: cacheReadTokens,
+            cacheWrite: cacheWriteTokens,
           },
           cost: this.calculateCost(totalInputTokens, totalOutputTokens),
           lastActivity: stat.mtime,
@@ -330,6 +396,52 @@ export class ClaudeMonitor extends EventEmitter {
     const inputCost = (inputTokens / 1000000) * 15;  // $15/M
     const outputCost = (outputTokens / 1000000) * 60; // $60/M
     return inputCost + outputCost;
+  }
+
+  private summarizeToolUse(toolName: string, input: Record<string, unknown>): string {
+    // 도구 사용을 읽기 쉬운 요약으로 변환
+    switch (toolName) {
+      case 'Read':
+        return `📖 ${this.shortenPath(input.file_path as string)}`;
+      case 'Edit':
+        return `✏️ ${this.shortenPath(input.file_path as string)}`;
+      case 'Write':
+        return `📝 ${this.shortenPath(input.file_path as string)}`;
+      case 'Bash':
+        const cmd = (input.command as string || '').slice(0, 40);
+        return `💻 ${cmd}${cmd.length >= 40 ? '...' : ''}`;
+      case 'Glob':
+        return `🔍 ${input.pattern}`;
+      case 'Grep':
+        return `🔎 "${input.pattern}"`;
+      case 'Task':
+        return `🤖 ${input.description || 'Sub-agent'}`;
+      case 'WebFetch':
+        return `🌐 ${this.shortenUrl(input.url as string)}`;
+      case 'WebSearch':
+        return `🔍 "${input.query}"`;
+      case 'TodoWrite':
+        return `📋 Update todos`;
+      default:
+        return `🔧 ${toolName}`;
+    }
+  }
+
+  private shortenPath(filePath: string | undefined): string {
+    if (!filePath) return 'unknown';
+    const parts = filePath.split('/');
+    if (parts.length <= 3) return filePath;
+    return `.../${parts.slice(-2).join('/')}`;
+  }
+
+  private shortenUrl(url: string | undefined): string {
+    if (!url) return 'unknown';
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname;
+    } catch {
+      return url.slice(0, 30);
+    }
   }
 
   getStatus() {

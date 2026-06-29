@@ -64,7 +64,7 @@ app.use(express.static(path.join(__dirname, '../../client/dist')));
 // Rate limiting: IP별 연결 추적
 const connectionAttempts = new Map<string, { count: number; lastAttempt: number }>();
 const RATE_LIMIT_WINDOW = 60000;  // 1분
-const RATE_LIMIT_MAX = 10;         // 1분에 10회 연결 시도
+const RATE_LIMIT_MAX = IS_PRODUCTION ? 30 : 100;  // 프로덕션: 30회, 개발: 100회
 
 // Auth middleware for API routes
 const auth = new AuthMiddleware(AUTH_TOKEN);
@@ -100,25 +100,31 @@ monitor.on('session_updated', (session) => {
 
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
-  // Rate limiting check
   const clientIp = req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const attempts = connectionAttempts.get(clientIp);
 
-  if (attempts) {
-    // 윈도우 리셋
-    if (now - attempts.lastAttempt > RATE_LIMIT_WINDOW) {
-      connectionAttempts.set(clientIp, { count: 1, lastAttempt: now });
-    } else if (attempts.count >= RATE_LIMIT_MAX) {
-      console.warn(`Rate limited: ${clientIp}`);
-      ws.close(4029, 'Too Many Requests');
-      return;
+  // 개발 모드에서는 localhost rate limiting 비활성화
+  const isLocalhost = clientIp === '::1' || clientIp === '127.0.0.1' || clientIp === '::ffff:127.0.0.1';
+  const skipRateLimit = !IS_PRODUCTION && isLocalhost;
+
+  if (!skipRateLimit) {
+    // Rate limiting check (프로덕션 또는 외부 IP)
+    const now = Date.now();
+    const attempts = connectionAttempts.get(clientIp);
+
+    if (attempts) {
+      if (now - attempts.lastAttempt > RATE_LIMIT_WINDOW) {
+        connectionAttempts.set(clientIp, { count: 1, lastAttempt: now });
+      } else if (attempts.count >= RATE_LIMIT_MAX) {
+        console.warn(`Rate limited: ${clientIp}`);
+        ws.close(4029, 'Too Many Requests');
+        return;
+      } else {
+        attempts.count++;
+        attempts.lastAttempt = now;
+      }
     } else {
-      attempts.count++;
-      attempts.lastAttempt = now;
+      connectionAttempts.set(clientIp, { count: 1, lastAttempt: now });
     }
-  } else {
-    connectionAttempts.set(clientIp, { count: 1, lastAttempt: now });
   }
 
   // Simple token auth via query param
