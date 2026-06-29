@@ -172,6 +172,13 @@ function shortProject(path?: string) {
   return parts.at(-1) || path
 }
 
+function getTypeLabel(type: ActivityLog['type']): string {
+  if (type === 'tool_use') return '도구 사용'
+  if (type === 'result') return '도구 결과'
+  if (type === 'message') return '메시지'
+  return type
+}
+
 function buildTimeline(agents: Agent[]): TimelineEvent[] {
   return agents
     .flatMap(agent =>
@@ -186,6 +193,21 @@ function buildTimeline(agents: Agent[]): TimelineEvent[] {
     )
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 16)
+}
+
+function buildFullTimeline(agents: Agent[]): TimelineEvent[] {
+  return agents
+    .flatMap(agent =>
+      (agent.recentActivity || []).map((activity, index) => ({
+        id: `${agent.id}-${activity.timestamp}-${index}`,
+        agentName: agent.name,
+        timestamp: activity.timestamp,
+        type: activity.type,
+        summary: activity.summary,
+        tool: activity.tool,
+      }))
+    )
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 }
 
 export default function App() {
@@ -207,6 +229,12 @@ export default function App() {
   const [loadingReports, setLoadingReports] = useState(false)
   const [loadingContent, setLoadingContent] = useState(false)
   const [reportsError, setReportsError] = useState('')
+  const [reportSearchQuery, setReportSearchQuery] = useState('')
+  const [selectedReportPath, setSelectedReportPath] = useState<string | null>(null)
+
+  // Logs filter state
+  const [logTypeFilter, setLogTypeFilter] = useState<'all' | 'tool_use' | 'result' | 'message'>('all')
+  const [logAgentFilter, setLogAgentFilter] = useState<string>('all')
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
@@ -217,10 +245,49 @@ export default function App() {
     [selectedAgentId, state.agents],
   )
   const timeline = useMemo(() => buildTimeline(state.agents), [state.agents])
+  const fullTimeline = useMemo(() => buildFullTimeline(state.agents), [state.agents])
   const activeProjectCount = useMemo(
     () => new Set(state.sessions.map(session => session.projectPath)).size,
     [state.sessions],
   )
+
+  // Unique agent names for filter dropdown
+  const uniqueAgentNames = useMemo(() => {
+    const names = new Set(state.agents.map(agent => agent.name))
+    return Array.from(names).sort()
+  }, [state.agents])
+
+  // Filtered logs
+  const filteredLogs = useMemo(() => {
+    return fullTimeline.filter(event => {
+      if (logTypeFilter !== 'all' && event.type !== logTypeFilter) return false
+      if (logAgentFilter !== 'all' && event.agentName !== logAgentFilter) return false
+      return true
+    })
+  }, [fullTimeline, logTypeFilter, logAgentFilter])
+
+  // Filter and group reports
+  const filteredReports = useMemo(() => {
+    const query = reportSearchQuery.toLowerCase().trim()
+    if (!query) return reports
+    return reports.filter(report =>
+      report.path.toLowerCase().includes(query) ||
+      report.name.toLowerCase().includes(query)
+    )
+  }, [reports, reportSearchQuery])
+
+  const groupedReports = useMemo(() => {
+    const groups: Record<string, Report[]> = {}
+    filteredReports.forEach(report => {
+      const lastSlashIndex = report.path.lastIndexOf('/')
+      const folder = lastSlashIndex > 0 ? report.path.substring(0, lastSlashIndex) : ''
+      if (!groups[folder]) {
+        groups[folder] = []
+      }
+      groups[folder].push(report)
+    })
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b))
+  }, [filteredReports])
 
   const fetchReports = useCallback(async () => {
     if (!authToken) return
@@ -258,6 +325,7 @@ export default function App() {
 
     setLoadingContent(true)
     setReportsError('')
+    setSelectedReportPath(reportPath)
 
     try {
       const protocol = window.location.protocol
@@ -657,21 +725,68 @@ export default function App() {
 
       {activeView === 'logs' && (
         <main className="simple-page">
-          <section className="terminal-panel">
+          <section className="terminal-panel logs-panel">
             <div className="panel-head">
               <div>
                 <p className="eyebrow">Logs</p>
                 <h2>시스템 로그</h2>
               </div>
             </div>
+
+            <div className="log-filters">
+              <div className="filter-group">
+                <label>타입</label>
+                <div className="filter-buttons">
+                  <button
+                    className={logTypeFilter === 'all' ? 'active' : ''}
+                    onClick={() => setLogTypeFilter('all')}
+                  >
+                    전체
+                  </button>
+                  <button
+                    className={logTypeFilter === 'tool_use' ? 'active' : ''}
+                    onClick={() => setLogTypeFilter('tool_use')}
+                  >
+                    도구
+                  </button>
+                  <button
+                    className={logTypeFilter === 'result' ? 'active' : ''}
+                    onClick={() => setLogTypeFilter('result')}
+                  >
+                    결과
+                  </button>
+                  <button
+                    className={logTypeFilter === 'message' ? 'active' : ''}
+                    onClick={() => setLogTypeFilter('message')}
+                  >
+                    메시지
+                  </button>
+                </div>
+              </div>
+
+              <div className="filter-group">
+                <label>에이전트</label>
+                <select value={logAgentFilter} onChange={(e) => setLogAgentFilter(e.target.value)}>
+                  <option value="all">전체</option>
+                  {uniqueAgentNames.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="filter-stats">
+                {filteredLogs.length} 로그
+              </div>
+            </div>
+
             <div className="terminal-output">
-              {timeline.length === 0 ? (
+              {filteredLogs.length === 0 ? (
                 <div className="empty-panel">
-                  <strong>로그 대기 중</strong>
-                  <p>Claude 세션 활동 로그가 준비되면 이곳에 표시됩니다.</p>
+                  <strong>로그 없음</strong>
+                  <p>선택한 필터에 해당하는 로그가 없습니다.</p>
                 </div>
               ) : (
-                timeline.map(event => {
+                filteredLogs.map(event => {
                   const agent = state.agents.find(a => a.name === event.agentName)
                   const projectName = shortProject(agent?.projectPath)
                   return (
@@ -679,7 +794,7 @@ export default function App() {
                       <span className="log-time">{formatTime(event.timestamp)}</span>
                       <span className="log-agent">{event.agentName}</span>
                       <span className="log-project">{projectName}</span>
-                      <span className={`log-type ${event.type}`}>{event.type}</span>
+                      <span className={`log-type ${event.type}`}>{getTypeLabel(event.type)}</span>
                       {event.tool && <span className="log-tool">{event.tool}</span>}
                       <span className="log-summary">{event.summary}</span>
                     </div>
@@ -712,6 +827,15 @@ export default function App() {
 
             <div className="reports-layout">
               <div className="reports-list">
+                <div className="reports-search">
+                  <input
+                    type="text"
+                    placeholder="보고서 검색..."
+                    value={reportSearchQuery}
+                    onChange={(e) => setReportSearchQuery(e.target.value)}
+                    className="search-input"
+                  />
+                </div>
                 {loadingReports ? (
                   <div className="empty-panel">
                     <strong>불러오는 중...</strong>
@@ -721,18 +845,30 @@ export default function App() {
                     <strong>보고서 없음</strong>
                     <p>.agents 폴더에 마크다운 파일이 없습니다.</p>
                   </div>
+                ) : filteredReports.length === 0 ? (
+                  <div className="empty-panel">
+                    <strong>검색 결과 없음</strong>
+                    <p>"{reportSearchQuery}"와 일치하는 보고서가 없습니다.</p>
+                  </div>
                 ) : (
-                  reports.map(report => (
-                    <button
-                      key={report.path}
-                      type="button"
-                      className={`report-item ${selectedReport?.path === report.path ? 'selected' : ''}`}
-                      onClick={() => fetchReportContent(report.path)}
-                    >
-                      <strong>{report.name}</strong>
-                      <small>{formatFileSize(report.size)} · {formatDate(report.modified)}</small>
-                    </button>
-                  ))
+                  <div className="reports-groups">
+                    {groupedReports.map(([folder, folderReports]) => (
+                      <div key={folder} className="report-group">
+                        {folder && <div className="report-group-header">{folder}/</div>}
+                        {folderReports.map(report => (
+                          <button
+                            key={report.path}
+                            type="button"
+                            className={`report-item ${selectedReportPath === report.path ? 'selected' : ''}`}
+                            onClick={() => fetchReportContent(report.path)}
+                          >
+                            <strong>{report.name}</strong>
+                            <small>{formatFileSize(report.size)} · {formatDate(report.modified)}</small>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 

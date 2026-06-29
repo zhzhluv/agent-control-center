@@ -55,6 +55,61 @@ const COLORS = {
   textDim: '#888',
 }
 
+// 레이아웃 상수
+const ROOM_WIDTH = 400
+const ROOM_HEIGHT = 300
+const ROOM_GAP = 20
+const ROOMS_PER_ROW = 2
+const CANVAS_PADDING = 30
+
+// 룸 레이아웃 계산 helper
+interface RoomLayout {
+  canvasWidth: number
+  canvasHeight: number
+  gridWidth: number
+  gridHeight: number
+  originX: number
+  originY: number
+  getRoomPosition: (index: number) => { x: number; y: number }
+}
+
+function getRoomLayout(roomCount: number): RoomLayout {
+  const count = Math.max(roomCount, 1)
+  const cols = Math.min(count, ROOMS_PER_ROW)
+  const rows = Math.ceil(count / ROOMS_PER_ROW)
+
+  // 실제 그리드 크기 계산
+  const gridWidth = cols * ROOM_WIDTH + (cols - 1) * ROOM_GAP
+  const gridHeight = rows * ROOM_HEIGHT + (rows - 1) * ROOM_GAP
+
+  // 캔버스 크기 = 그리드 + 패딩
+  const canvasWidth = gridWidth + CANVAS_PADDING * 2
+  const canvasHeight = gridHeight + CANVAS_PADDING * 2
+
+  // 그리드 시작점 (캔버스 중앙 정렬)
+  const originX = (canvasWidth - gridWidth) / 2
+  const originY = (canvasHeight - gridHeight) / 2
+
+  const getRoomPosition = (index: number) => {
+    const col = index % ROOMS_PER_ROW
+    const row = Math.floor(index / ROOMS_PER_ROW)
+    return {
+      x: originX + col * (ROOM_WIDTH + ROOM_GAP),
+      y: originY + row * (ROOM_HEIGHT + ROOM_GAP)
+    }
+  }
+
+  return {
+    canvasWidth,
+    canvasHeight,
+    gridWidth,
+    gridHeight,
+    originX,
+    originY,
+    getRoomPosition
+  }
+}
+
 export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: PixelOfficeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hoveredAgent, setHoveredAgent] = useState<Agent | null>(null)
@@ -81,15 +136,8 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     }))
   }, [agents])
 
-  const ROOM_WIDTH = 400
-  const ROOM_HEIGHT = 300
-  const ROOM_PADDING = 20
-  const ROOMS_PER_ROW = 2
-
-  const calculatedWidth = Math.min(Math.max(projectRooms.length, 1), ROOMS_PER_ROW) * (ROOM_WIDTH + ROOM_PADDING) + ROOM_PADDING
-  const calculatedHeight = Math.ceil(Math.max(projectRooms.length, 1) / ROOMS_PER_ROW) * (ROOM_HEIGHT + ROOM_PADDING) + ROOM_PADDING
-  const canvasWidth = Math.max(960, calculatedWidth)
-  const canvasHeight = Math.max(540, calculatedHeight)
+  // 레이아웃 계산 (render와 hover에서 공유)
+  const layout = useMemo(() => getRoomLayout(projectRooms.length), [projectRooms.length])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -102,19 +150,15 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
 
       // 배경
       ctx.fillStyle = COLORS.bg
-      ctx.fillRect(0, 0, canvasWidth || 800, canvasHeight || 400)
+      ctx.fillRect(0, 0, layout.canvasWidth, layout.canvasHeight)
 
       if (projectRooms.length === 0) {
-        renderEmptyOffice(ctx, canvasWidth, canvasHeight)
+        renderEmptyOffice(ctx, layout.canvasWidth, layout.canvasHeight)
       } else {
-        // 각 프로젝트 방 렌더링
+        // 각 프로젝트 방 렌더링 (layout helper 사용)
         projectRooms.forEach((room, index) => {
-          const col = index % ROOMS_PER_ROW
-          const row = Math.floor(index / ROOMS_PER_ROW)
-          const roomX = ROOM_PADDING + col * (ROOM_WIDTH + ROOM_PADDING)
-          const roomY = ROOM_PADDING + row * (ROOM_HEIGHT + ROOM_PADDING)
-
-          renderRoom(ctx, room, roomX, roomY, ROOM_WIDTH, ROOM_HEIGHT)
+          const pos = layout.getRoomPosition(index)
+          renderRoom(ctx, room, pos.x, pos.y, ROOM_WIDTH, ROOM_HEIGHT)
         })
       }
 
@@ -128,7 +172,7 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
         cancelAnimationFrame(animationFrameId.current)
       }
     }
-  }, [projectRooms, canvasWidth, canvasHeight, selectedAgentId])
+  }, [projectRooms, layout, selectedAgentId])
 
   const renderEmptyOffice = (
     ctx: CanvasRenderingContext2D,
@@ -380,17 +424,15 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
       y: e.clientY - rect.top,
     })
 
-    // 에이전트 호버 감지
+    // 에이전트 호버 감지 (layout helper 사용 - render와 동일한 좌표)
     let found: Agent | null = null
     projectRooms.forEach((room, roomIndex) => {
-      const col = roomIndex % ROOMS_PER_ROW
-      const row = Math.floor(roomIndex / ROOMS_PER_ROW)
-      const roomX = ROOM_PADDING + col * (ROOM_WIDTH + ROOM_PADDING)
-      const roomY = ROOM_PADDING + row * (ROOM_HEIGHT + ROOM_PADDING)
+      const roomPos = layout.getRoomPosition(roomIndex)
 
       room.agents.forEach((agent, index) => {
-        const agentX = roomX + 60 + (index % 4) * 80
-        const agentY = roomY + 40 + 40 + Math.floor(index / 4) * 70
+        // renderRoom 내부의 에이전트 위치와 동일한 계산
+        const agentX = roomPos.x + 60 + (index % 4) * 80
+        const agentY = roomPos.y + 40 + 40 + Math.floor(index / 4) * 70
 
         const dist = Math.sqrt((x - agentX) ** 2 + (y - agentY) ** 2)
         if (dist < 20) {
@@ -412,8 +454,8 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     <div className="pixel-office">
       <canvas
         ref={canvasRef}
-        width={canvasWidth || 800}
-        height={canvasHeight || 400}
+        width={layout.canvasWidth}
+        height={layout.canvasHeight}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onMouseLeave={() => setHoveredAgent(null)}

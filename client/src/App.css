@@ -116,7 +116,8 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(86px, 1fr));
   gap: 10px;
-  min-width: min(560px, 52vw);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .header-metrics div {
@@ -651,8 +652,91 @@
   overflow: hidden;
 }
 
+.logs-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.log-filters {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.2);
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-group label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.filter-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.filter-buttons button {
+  min-height: 30px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.filter-buttons button.active {
+  border-color: rgba(127, 220, 207, 0.5);
+  background: rgba(48, 195, 168, 0.15);
+  color: #7fdccf;
+}
+
+.filter-buttons button:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.filter-group select {
+  min-height: 30px;
+  min-width: 140px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.filter-group select:focus {
+  outline: none;
+  border-color: rgba(127, 220, 207, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.filter-stats {
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(127, 220, 207, 0.1);
+  color: #7fdccf;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .terminal-output {
-  height: calc(100% - 66px);
+  flex: 1;
+  min-height: 0;
   padding: 16px;
   overflow-y: auto;
   background: #10141d;
@@ -675,19 +759,23 @@
 
 .log-entry {
   display: grid;
-  grid-template-columns: 60px 120px 100px 80px auto minmax(0, 1fr);
+  grid-template-columns: 60px 120px 100px 90px auto minmax(0, 1fr);
   gap: 12px;
-  align-items: center;
-  padding: 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  align-items: start;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
 }
 
 .log-time {
   color: var(--text-secondary);
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .log-agent {
@@ -696,6 +784,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 120px;
 }
 
 .log-project {
@@ -704,15 +793,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100px;
 }
 
 .log-type {
-  padding: 2px 6px;
+  padding: 4px 8px;
   border-radius: 6px;
   font-size: 10px;
-  text-transform: uppercase;
   font-weight: 600;
-  letter-spacing: 0.3px;
   white-space: nowrap;
 }
 
@@ -736,6 +824,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .log-content {
@@ -755,7 +844,7 @@
 }
 
 .log-tool {
-  padding: 2px 6px;
+  padding: 4px 8px;
   border-radius: 6px;
   background: rgba(139, 92, 246, 0.18);
   color: #c9b8ff;
@@ -764,6 +853,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100px;
 }
 
 .log-content p {
@@ -995,7 +1085,7 @@ button.danger {
 
   .ops-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(420px, 52vh) auto 260px 260px;
+    grid-template-rows: minmax(380px, 45vh) auto 260px 260px;
     grid-template-areas:
       "office"
       "inspector"
@@ -1007,6 +1097,10 @@ button.danger {
   .inspector-shell {
     grid-row: auto;
   }
+
+  .reports-layout {
+    grid-template-columns: 280px 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1016,18 +1110,59 @@ button.danger {
     padding-right: 14px;
   }
 
+  .brand-block h1 {
+    font-size: 18px;
+  }
+
+  .brand-block p {
+    font-size: 12px;
+  }
+
   .header-metrics {
     grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .header-metrics div {
+    padding: 8px 10px;
+  }
+
+  .header-metrics span {
+    font-size: 16px;
   }
 
   .ops-tabs {
     padding-left: 14px;
     padding-right: 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ops-tabs button {
+    min-width: 80px;
+    white-space: nowrap;
   }
 
   .ops-layout,
   .simple-page {
     padding: 10px;
+  }
+
+  .ops-layout {
+    grid-template-rows: minmax(320px, 40vh) auto 240px 240px;
+  }
+
+  .panel-head {
+    padding: 12px 14px;
+  }
+
+  .panel-head h2 {
+    font-size: 16px;
+  }
+
+  .eyebrow {
+    font-size: 10px;
   }
 
   .reports-layout {
@@ -1039,67 +1174,287 @@ button.danger {
     border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   }
+
+  .log-filters {
+    padding: 12px 14px;
+    gap: 12px;
+  }
+
+  .filter-group select {
+    min-width: 110px;
+  }
+
+  .filter-stats {
+    margin-left: 0;
+    width: 100%;
+    text-align: center;
+  }
+
+  .log-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    border-bottom: none;
+  }
+
+  .log-entry:last-child {
+    margin-bottom: 0;
+  }
+
+  /* 첫 줄: 시간 + 에이전트명 */
+  .log-time {
+    order: 1;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .log-agent {
+    order: 2;
+    font-size: 14px;
+    font-weight: 600;
+    max-width: none;
+    color: var(--text-primary);
+  }
+
+  /* 둘째 줄: 프로젝트 + 타입 + 도구 (pill 형태) */
+  .log-project {
+    order: 3;
+    display: inline-block;
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    font-size: 10px;
+    max-width: 140px;
+    margin-right: 6px;
+  }
+
+  .log-type {
+    order: 4;
+    display: inline-block;
+    font-size: 9px;
+    padding: 3px 6px;
+    margin-right: 6px;
+  }
+
+  .log-tool {
+    order: 5;
+    display: inline-block;
+    max-width: 120px;
+    font-size: 9px;
+    padding: 3px 6px;
+  }
+
+  /* 셋째 줄: 요약 */
+  .log-summary {
+    order: 6;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .agent-inspector {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .inspector-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .staff-row,
+  .report-item {
+    min-height: 48px;
+    padding: 8px 10px;
+  }
 }
 
-/* Log view styles */
-.log-list {
+/* Additional mobile breakpoint for very small screens */
+@media (max-width: 375px) {
+  .auth-card {
+    padding: 24px;
+  }
+
+  .ops-header {
+    min-height: auto;
+    padding: 12px 14px;
+  }
+
+  .header-metrics {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .header-metrics div {
+    padding: 6px 8px;
+  }
+
+  .header-metrics span {
+    font-size: 14px;
+  }
+
+  .header-metrics small {
+    font-size: 10px;
+  }
+
+  .ops-tabs {
+    gap: 6px;
+    padding: 8px 14px 0;
+  }
+
+  .ops-tabs button {
+    min-height: 36px;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .ops-layout {
+    padding: 8px;
+    gap: 10px;
+  }
+
+  .panel-head {
+    padding: 10px 12px;
+  }
+
+  .office-summary {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .agent-profile {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .status-pills {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    flex-direction: row;
+  }
+
+  /* Small mobile log entry refinements */
+  .log-entry {
+    padding: 10px;
+  }
+
+  .log-agent {
+    font-size: 13px;
+  }
+
+  .log-project {
+    max-width: 110px;
+    font-size: 9px;
+  }
+
+  .log-summary {
+    font-size: 11px;
+  }
+}
+
+/* Reports UX Improvements */
+.reports-search {
+  flex-shrink: 0;
+  padding: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.search-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: rgba(127, 220, 207, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.reports-groups {
+  flex: 1;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.report-group {
+  margin-bottom: 14px;
+}
+
+.report-group:last-child {
+  margin-bottom: 0;
+}
+
+.report-group-header {
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: rgba(127, 220, 207, 0.12);
+  color: #7fdccf;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Updated reports-list for flexbox layout */
+.reports-panel .reports-list {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-.log-entry {
-  display: grid;
-  grid-template-columns: 60px auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.log-entry:last-child {
-  border-bottom: none;
-}
-
-.log-entry time {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: nowrap;
-}
-
-.log-content {
-  min-width: 0;
-}
-
-.log-meta {
+/* Updated reports content for proper scrolling */
+.reports-panel .reports-content {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.log-meta strong {
-  color: var(--text-primary);
-  font-size: 13px;
+.reports-panel .report-viewer {
+  flex: 1;
+  min-height: 0;
+  padding: 18px;
+  overflow: hidden;
 }
 
-.log-tool {
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(139, 92, 246, 0.18);
-  color: #c9b8ff;
-  font-size: 10px;
-  font-weight: 600;
-  white-space: nowrap;
+.reports-panel .report-header {
+  flex-shrink: 0;
+}
+
+.reports-panel .report-header h3 {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.log-content p {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
+.reports-panel .report-content {
+  margin-top: 14px;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #e8e8e8;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, 'Cascadia Code', monospace;
+  line-height: 1.7;
+  word-wrap: break-word;
+  tab-size: 2;
 }
