@@ -297,6 +297,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .status-pills {
@@ -427,6 +428,8 @@
   padding: 14px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.05);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .task-card small {
@@ -440,6 +443,7 @@
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .inspector-grid {
@@ -766,6 +770,8 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .log-entry:last-child {
@@ -1003,6 +1009,13 @@ button.danger {
   overflow: hidden;
 }
 
+/* Ensure reports layout works on medium screens */
+@media (max-width: 900px) and (min-width: 721px) {
+  .reports-layout {
+    grid-template-columns: 260px 1fr;
+  }
+}
+
 .reports-list {
   min-height: 0;
   padding: 10px;
@@ -1142,6 +1155,7 @@ button.danger {
   .header-metrics {
     width: 100%;
     min-width: 0;
+    grid-template-columns: repeat(4, 1fr);
   }
 
   .ops-layout {
@@ -1335,6 +1349,22 @@ button.danger {
   .report-item {
     min-height: 48px;
     padding: 8px 10px;
+  }
+}
+
+/* iPad landscape and mid-size tablets */
+@media (max-width: 1180px) and (min-width: 821px) {
+  .ops-layout {
+    grid-template-columns: 1fr 340px;
+    grid-template-rows: minmax(400px, 1fr) 220px;
+    grid-template-areas:
+      "office inspector"
+      "staff events";
+    gap: 12px;
+  }
+
+  .event-shell {
+    grid-area: events;
   }
 }
 
