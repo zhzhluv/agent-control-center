@@ -149,8 +149,8 @@ export class ClaudeMonitor extends EventEmitter {
     const stat = fs.statSync(filePath);
 
     try {
-      // 마지막 몇 줄만 읽기 (효율성) - 활동 로그를 위해 더 많이 읽음
-      const lines = await this.readLastLines(filePath, 30);
+      // Stream entire file to collect cwd statistics, keep last 30 lines for activity
+      const { recentLines: lines, cwdCounts } = await this.streamParseJsonl(filePath, 30);
 
       let sessionId = '';
       let agentId = '';
@@ -161,7 +161,6 @@ export class ClaudeMonitor extends EventEmitter {
       let cacheWriteTokens = 0;
       let lastMessage = '';
       let lastMessageFull = '';
-      let cwd = '';
       const recentTools: string[] = [];
       const recentActivity: ActivityLog[] = [];
 
@@ -174,7 +173,7 @@ export class ClaudeMonitor extends EventEmitter {
           if (data.sessionId) sessionId = data.sessionId;
           if (data.agentId) agentId = data.agentId;
           if (data.parentSessionId) parentSessionId = data.parentSessionId;
-          if (data.cwd) cwd = data.cwd;
+          // Note: cwd is now collected from entire file via streamParseJsonl
 
           if (data.message?.usage) {
             totalInputTokens += data.message.usage.input_tokens || 0;
@@ -235,6 +234,9 @@ export class ClaudeMonitor extends EventEmitter {
 
       // 최근 활동만 유지 (최대 10개)
       const trimmedActivity = recentActivity.slice(-10);
+
+      // Determine canonical cwd based on frequency, filtering out temp directories
+      const cwd = this.getCanonicalCwd(cwdCounts);
 
       if (isAgent && agentId) {
         // 에이전트 타입 결정: parentSessionId가 있으면 서브에이전트
@@ -300,6 +302,39 @@ export class ClaudeMonitor extends EventEmitter {
         };
 
         this.sessions.set(sessionId, session);
+
+        // Create a main agent for sessions without explicit agent-*.jsonl files
+        // This ensures every session has at least one visible "worker" in the UI
+        if (!isAgent) {
+          const mainAgentId = `main:${sessionId}`;
+          const agentStatus: 'idle' | 'working' | 'waiting' =
+            state === 'active' ? 'working' : 'idle';
+
+          const mainAgent: AgentInfo = {
+            id: mainAgentId,
+            name: this.getAgentName(mainAgentId),
+            status: agentStatus,
+            agentType: 'main',
+            currentTask: lastMessage || 'Session active',
+            currentTaskFull: lastMessageFull || undefined,
+            recentTools,
+            recentActivity: trimmedActivity,
+            tokens: {
+              input: totalInputTokens,
+              output: totalOutputTokens,
+              cacheRead: cacheReadTokens,
+              cacheWrite: cacheWriteTokens,
+            },
+            cost: this.calculateCost(totalInputTokens, totalOutputTokens),
+            lastActivity: stat.mtime,
+            projectPath: actualProjectPath,
+            sessionId: sessionId,
+          };
+
+          this.agents.set(mainAgentId, mainAgent);
+          this.emit('agent_updated', mainAgent);
+        }
+
         this.emit('session_updated', this.enrichSessionWithAgents(session));
       }
     } catch (err) {
@@ -307,22 +342,47 @@ export class ClaudeMonitor extends EventEmitter {
     }
   }
 
-  private async readLastLines(filePath: string, numLines: number): Promise<string[]> {
+  /**
+   * Stream through entire JSONL file to collect:
+   * - cwdCounts: frequency of each cwd across the entire file
+   * - recentLines: last N lines for activity display
+   * This avoids loading the entire file into memory while still
+   * getting accurate cwd statistics from the full session history.
+   */
+  private async streamParseJsonl(filePath: string, numRecentLines: number): Promise<{
+    recentLines: string[];
+    cwdCounts: Map<string, number>;
+  }> {
     return new Promise((resolve, reject) => {
-      const lines: string[] = [];
+      const recentLines: string[] = [];
+      const cwdCounts = new Map<string, number>();
+
       const rl = readline.createInterface({
         input: fs.createReadStream(filePath),
         crlfDelay: Infinity
       });
 
       rl.on('line', (line) => {
-        lines.push(line);
-        if (lines.length > numLines) {
-          lines.shift();
+        // Keep only the last N lines for recent activity
+        recentLines.push(line);
+        if (recentLines.length > numRecentLines) {
+          recentLines.shift();
+        }
+
+        // Extract cwd from every line for accurate project path detection
+        if (line.trim()) {
+          try {
+            const data = JSON.parse(line);
+            if (data.cwd && typeof data.cwd === 'string') {
+              cwdCounts.set(data.cwd, (cwdCounts.get(data.cwd) || 0) + 1);
+            }
+          } catch {
+            // Ignore JSON parse errors
+          }
         }
       });
 
-      rl.on('close', () => resolve(lines));
+      rl.on('close', () => resolve({ recentLines, cwdCounts }));
       rl.on('error', reject);
     });
   }
@@ -414,6 +474,76 @@ export class ClaudeMonitor extends EventEmitter {
     const names = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta'];
     const hash = agentId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
     return `Agent ${names[hash % names.length]}`;
+  }
+
+  /**
+   * Find the git repository root for a given path.
+   * Walks up the directory tree looking for .git directory.
+   * Returns the original path if no git root is found.
+   */
+  private findGitRoot(dirPath: string): string {
+    if (!dirPath || dirPath === '/') return dirPath;
+
+    try {
+      let current = dirPath;
+      const maxDepth = 10; // Prevent infinite loops
+      let depth = 0;
+
+      while (current && current !== '/' && depth < maxDepth) {
+        const gitDir = path.join(current, '.git');
+        if (fs.existsSync(gitDir)) {
+          return current;
+        }
+        const parent = path.dirname(current);
+        if (parent === current) break;
+        current = parent;
+        depth++;
+      }
+    } catch {
+      // Ignore errors (permission issues, etc.)
+    }
+
+    return dirPath;
+  }
+
+  /**
+   * Determine canonical cwd from frequency map collected from entire JSONL file.
+   * - Normalizes paths to git repository root when possible
+   * - Filters out temporary directories (/tmp, /private/tmp, /var/folders, /dev)
+   * - Returns the most frequent non-temp, normalized path
+   */
+  private getCanonicalCwd(cwdCounts: Map<string, number>): string {
+    if (cwdCounts.size === 0) return '';
+
+    // Temporary/transient path patterns to exclude
+    const tempPatterns = [
+      /^\/tmp\b/,
+      /^\/private\/tmp\b/,
+      /^\/var\/folders\b/,
+      /^\/dev\b/,
+    ];
+
+    const isTempPath = (p: string): boolean => tempPatterns.some(re => re.test(p));
+
+    // Normalize paths to git root and aggregate counts
+    const normalizedCounts = new Map<string, number>();
+    for (const [cwdPath, count] of cwdCounts) {
+      if (isTempPath(cwdPath)) continue; // Skip temp paths entirely
+
+      // Normalize to git root (e.g., /repo/client → /repo)
+      const normalized = this.findGitRoot(cwdPath);
+      normalizedCounts.set(normalized, (normalizedCounts.get(normalized) || 0) + count);
+    }
+
+    // If all paths were temp, try to return the most common temp path
+    if (normalizedCounts.size === 0) {
+      const sorted = Array.from(cwdCounts.entries()).sort((a, b) => b[1] - a[1]);
+      return sorted[0]?.[0] || '';
+    }
+
+    // Sort by frequency (descending) and return the most common
+    const sorted = Array.from(normalizedCounts.entries()).sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] || '';
   }
 
   private pathFromProjectName(projectName: string): string {
