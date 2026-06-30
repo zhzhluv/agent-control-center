@@ -1,7 +1,7 @@
 {
   "name": "agent-control-center",
   "version": "1.0.0",
-  "description": "Remote control center for Claude agents - monitor and command from anywhere",
+  "description": "Read-only monitoring center for Claude and Codex agents - monitor sessions from anywhere",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
@@ -18,21 +18,22 @@
     "test:reports": "./test-reports-api.sh"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "ws": "^8.18.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "uuid": "^10.0.0"
+    "express": "^4.21.0",
+    "uuid": "^10.0.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/ws": "^8.5.12",
     "@types/cors": "^2.8.17",
-    "@types/uuid": "^10.0.0",
+    "@types/express": "^4.17.21",
     "@types/node": "^22.5.0",
-    "typescript": "^5.5.4",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.12",
+    "concurrently": "^8.2.2",
+    "puppeteer": "^25.2.1",
     "tsx": "^4.19.0",
-    "concurrently": "^8.2.2"
+    "typescript": "^5.5.4"
   },
   "engines": {
     "node": ">=20.0.0"

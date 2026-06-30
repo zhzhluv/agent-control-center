@@ -1,0 +1,447 @@
+{
+  "timestamp": "2026-06-30T18:03:48.490Z",
+  "sections": {
+    "staffBoard": {
+      "found": true,
+      "html": "<div id=\"root\"><div class=\"ops-app\"><header class=\"ops-header\"><div class=\"brand-block\"><span class=\"connection-light is-on\"></span><div><h1>Agent Control Center</h1><p>실시간 감시 중</p></div></div><div class=\"header-metrics\"><div><span>2</span><small>작업 중</small></div><div><span>12</span><small>전체 직원</small></div><div><span>27.8k</span><small>토큰</small></div><div><span>$1.1588</span><small>비용</small></div></div></header><nav class=\"ops-tabs\" aria-label=\"view navigation\"><button class=\"active\">운영실</b"
+    },
+    "sourceBadges": {
+      "total": 29,
+      "cBadges": 23,
+      "xBadges": 6,
+      "badges": [
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "X",
+          "className": "source-badge codex",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(255, 178, 102)",
+            "backgroundColor": "rgba(255, 138, 0, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "X",
+          "className": "source-badge codex",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(255, 178, 102)",
+            "backgroundColor": "rgba(255, 138, 0, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "X",
+          "className": "source-badge codex",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(255, 178, 102)",
+            "backgroundColor": "rgba(255, 138, 0, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "X",
+          "className": "source-badge codex",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(255, 178, 102)",
+            "backgroundColor": "rgba(255, 138, 0, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "X",
+          "className": "source-badge codex",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(255, 178, 102)",
+            "backgroundColor": "rgba(255, 138, 0, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "X",
+          "className": "source-badge codex",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(255, 178, 102)",
+            "backgroundColor": "rgba(255, 138, 0, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        },
+        {
+          "text": "C",
+          "className": "source-badge claude",
+          "tagName": "SPAN",
+          "rect": {},
+          "style": {
+            "color": "rgb(90, 158, 255)",
+            "backgroundColor": "rgba(63, 123, 247, 0.18)",
+            "borderRadius": "4px",
+            "padding": "0px",
+            "fontSize": "10px"
+          }
+        }
+      ]
+    },
+    "pixelOffice": {
+      "hasCanvas": true,
+      "canvasSize": {
+        "width": 880,
+        "height": 680
+      },
+      "hasOfficeContainer": true,
+      "avatarCount": 0,
+      "visibleAvatars": 0
+    },
+    "eventStream": {
+      "found": true,
+      "eventCount": 0,
+      "events": []
+    },
+    "reports": {
+      "found": true,
+      "count": 80,
+      "visible": true
+    },
+    "layoutIssues": {
+      "textOverlap": [
+        " overlaps ops-app",
+        "ops-app overlaps brand-block",
+        "brand-block overlaps connection-light is-on",
+        " overlaps ",
+        "header-metrics overlaps ",
+        " overlaps ",
+        " overlaps ",
+        " overlaps ",
+        " overlaps ",
+        "panel-head overlaps ",
+        " overlaps eyebrow",
+        "reports-layout overlaps reports-list",
+        "reports-list overlaps reports-search",
+        "reports-groups overlaps report-group",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "report-group overlaps report-group-header",
+        "reports-content overlaps empty-panel",
+        "empty-panel overlaps "
+      ],
+      "horizontalScroll": false,
+      "unclickableAreas": [],
+      "brokenLayout": [],
+      "totalIssues": 26
+    }
+  }
+}
