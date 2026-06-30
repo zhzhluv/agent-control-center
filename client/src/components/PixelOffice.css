@@ -6,7 +6,7 @@
   align-items: center;
   justify-content: center;
   background: #111722;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .office-canvas {
@@ -19,6 +19,13 @@
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   cursor: pointer;
+  outline: none;
+}
+
+.office-canvas:focus-visible {
+  outline: 2px solid rgba(127, 220, 207, 0.6);
+  outline-offset: 4px;
+  border-radius: 8px;
 }
 
 /* 범례 */
@@ -66,19 +73,20 @@
 
 /* 툴팁 */
 .agent-tooltip {
-  position: absolute;
-  background: rgba(18, 23, 34, 0.96);
-  border: 1px solid rgba(127, 220, 207, 0.28);
+  position: fixed;
+  background: rgba(18, 23, 34, 0.98);
+  border: 1px solid rgba(127, 220, 207, 0.35);
   border-radius: 10px;
   padding: 12px;
   min-width: 220px;
-  max-width: min(280px, calc(100vw - 32px));
+  max-width: min(320px, calc(100vw - 32px));
   pointer-events: none;
-  z-index: 100;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(127, 220, 207, 0.1);
   animation: fadeIn 0.15s ease-out;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  backdrop-filter: blur(12px);
 }
 
 .tooltip-header {
@@ -95,6 +103,7 @@
 .tooltip-status.working { color: #4CAF50; }
 .tooltip-status.idle { color: #2196F3; }
 .tooltip-status.waiting { color: #FFC107; }
+.tooltip-status.stale { color: #888; opacity: 0.6; }
 
 .tooltip-name {
   font-weight: bold;
@@ -182,16 +191,32 @@
 }
 
 .tooltip-project {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 10px;
-  color: #666;
-  font-family: monospace;
+  margin-top: 0;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.15);
+  font-size: 11px;
+  color: #a5b4fc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 200px;
+  max-width: 100%;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.tooltip-stale-badge {
+  margin-top: 6px;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(255, 152, 0, 0.15);
+  color: #ffb366;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  border: 1px solid rgba(255, 152, 0, 0.25);
 }
 
 /* Animation */

@@ -41,11 +41,14 @@ export interface ProjectInfo {
   lastActivity: Date;
 }
 
+export type SessionState = 'active' | 'idle' | 'stale';
+
 export interface SessionInfo {
   id: string;
   projectPath: string;
   agents: AgentInfo[];
   isActive: boolean;
+  state: SessionState;  // active: <30s, idle: 30s-5m, stale: >5m
   lastActivity: Date;
   totalTokens: {
     input: number;
@@ -61,8 +64,13 @@ export class ClaudeMonitor extends EventEmitter {
   private agents: Map<string, AgentInfo> = new Map();
   private refreshInterval: NodeJS.Timeout | null = null;
 
-  // 세션이 "활성"으로 간주되는 시간 (초)
-  private readonly ACTIVE_THRESHOLD_SECONDS = 30;
+  // Session state thresholds (seconds)
+  private readonly ACTIVE_THRESHOLD_SECONDS = 30;     // <30s = active
+  private readonly IDLE_THRESHOLD_SECONDS = 300;      // 30s-5m = idle
+  // >5m = stale (but still tracked)
+
+  // File scanning window for initial discovery (seconds)
+  private readonly SCAN_WINDOW_SECONDS = 600;         // 10 minutes
 
   constructor() {
     super();
@@ -115,21 +123,22 @@ export class ClaudeMonitor extends EventEmitter {
   private async scanProjectSessions(projectDir: string, projectName: string) {
     const files = fs.readdirSync(projectDir).filter(f => f.endsWith('.jsonl'));
     const now = Date.now();
-    const recentFiles: string[] = [];
+    const filesToScan: string[] = [];
 
-    // 최근 수정된 파일만 처리 (30초 이내)
+    // Scan files modified within last 10 minutes for initial discovery
+    // (individual session state will be determined by actual lastActivity)
     for (const file of files) {
       const filePath = path.join(projectDir, file);
       const stat = fs.statSync(filePath);
       const ageSeconds = (now - stat.mtimeMs) / 1000;
 
-      if (ageSeconds < this.ACTIVE_THRESHOLD_SECONDS) {
-        recentFiles.push(filePath);
+      if (ageSeconds < this.SCAN_WINDOW_SECONDS) {
+        filesToScan.push(filePath);
       }
     }
 
-    // 활성 세션 파싱
-    for (const filePath of recentFiles) {
+    // Parse all discovered session files
+    for (const filePath of filesToScan) {
       await this.parseSessionFile(filePath, projectName);
     }
   }
@@ -258,13 +267,30 @@ export class ClaudeMonitor extends EventEmitter {
       }
 
       if (sessionId) {
+        // Calculate session state based on lastActivity
+        const ageSeconds = (Date.now() - stat.mtime.getTime()) / 1000;
+        let state: SessionState;
+        if (ageSeconds < this.ACTIVE_THRESHOLD_SECONDS) {
+          state = 'active';
+        } else if (ageSeconds < this.IDLE_THRESHOLD_SECONDS) {
+          state = 'idle';
+        } else {
+          state = 'stale';
+        }
+
         // 세션 정보 업데이트 (토큰은 에이전트에서 집계하므로 여기서는 누적하지 않음)
         const existingSession = this.sessions.get(sessionId);
+
+        // CRITICAL: Use cwd from jsonl file as the actual project path
+        // Directory name is just an encoded representation and may contain multiple projects
+        const actualProjectPath = cwd || existingSession?.projectPath || this.pathFromProjectName(projectName);
+
         const session: SessionInfo = {
           id: sessionId,
-          projectPath: cwd || existingSession?.projectPath || this.pathFromProjectName(projectName),
+          projectPath: actualProjectPath,
           agents: existingSession?.agents || [],
-          isActive: true,
+          isActive: state === 'active', // Keep for backwards compatibility
+          state,
           lastActivity: stat.mtime,
           totalTokens: {
             // 세션 토큰은 소속된 에이전트 토큰의 합계로 계산 (getStatus에서 처리)
@@ -339,27 +365,40 @@ export class ClaudeMonitor extends EventEmitter {
 
   private checkActiveSessions() {
     const now = Date.now();
-    const threshold = this.ACTIVE_THRESHOLD_SECONDS * 1000;
+    const activeThreshold = this.ACTIVE_THRESHOLD_SECONDS * 1000;
+    const idleThreshold = this.IDLE_THRESHOLD_SECONDS * 1000;
 
-    // 비활성 에이전트 상태 업데이트
+    // Update agent status
     this.agents.forEach((agent, id) => {
       const age = now - agent.lastActivity.getTime();
-      if (age > threshold) {
+      if (age > activeThreshold) {
         agent.status = 'idle';
         this.emit('agent_updated', agent);
       }
     });
 
-    // 비활성 세션 표시
+    // Update session states based on age
     this.sessions.forEach((session, id) => {
       const age = now - session.lastActivity.getTime();
-      if (age > threshold && session.isActive) {
-        session.isActive = false;
+      let newState: SessionState;
+
+      if (age < activeThreshold) {
+        newState = 'active';
+      } else if (age < idleThreshold) {
+        newState = 'idle';
+      } else {
+        newState = 'stale';
+      }
+
+      // Update if state changed
+      if (session.state !== newState) {
+        session.state = newState;
+        session.isActive = (newState === 'active');
         this.emit('session_updated', this.enrichSessionWithAgents(session));
       }
     });
 
-    // 상태 브로드캐스트
+    // Broadcast status update
     this.emit('status_update', this.getStatus());
   }
 
@@ -452,13 +491,37 @@ export class ClaudeMonitor extends EventEmitter {
 
     const activeAgents = agents.filter(a => a.status === 'working');
 
-    // 세션별로 에이전트 연결 (sessionId 기준)
-    const sessionsWithAgents = sessions
-      .filter(s => s.isActive)
-      .map(session => ({
-        ...session,
-        agents: agents.filter(agent => agent.sessionId === session.id)
-      }));
+    // Return ALL sessions (not just active), with their agents
+    const sessionsWithAgents = sessions.map(session => ({
+      ...session,
+      agents: agents.filter(agent => agent.sessionId === session.id)
+    }));
+
+    // Group sessions by project path
+    const projectsMap = new Map<string, ProjectInfo>();
+
+    sessionsWithAgents.forEach(session => {
+      const projectPath = session.projectPath;
+
+      if (!projectsMap.has(projectPath)) {
+        projectsMap.set(projectPath, {
+          path: projectPath,
+          name: this.getProjectName(projectPath),
+          sessions: [],
+          lastActivity: session.lastActivity,
+        });
+      }
+
+      const project = projectsMap.get(projectPath)!;
+      project.sessions.push(session);
+
+      // Update project lastActivity to the most recent session activity
+      if (session.lastActivity > project.lastActivity) {
+        project.lastActivity = session.lastActivity;
+      }
+    });
+
+    const projects = Array.from(projectsMap.values());
 
     const totalTokens = agents.reduce((sum, a) => ({
       input: sum.input + a.tokens.input,
@@ -469,18 +532,37 @@ export class ClaudeMonitor extends EventEmitter {
 
     const totalCost = agents.reduce((sum, a) => sum + a.cost, 0);
 
+    // Count sessions by state
+    const activeSessions = sessions.filter(s => s.state === 'active').length;
+    const idleSessions = sessions.filter(s => s.state === 'idle').length;
+    const staleSessions = sessions.filter(s => s.state === 'stale').length;
+
     return {
       agents,
       sessions: sessionsWithAgents,
+      projects,  // NEW: Project-level grouping
       metrics: {
         totalTokens,
         totalCost,
         cacheHitRate: 0,
         activeAgents: activeAgents.length,
         totalAgents: agents.length,
-        activeSessions: sessionsWithAgents.length,
+        activeSessions,
+        idleSessions,    // NEW
+        staleSessions,   // NEW
+        totalSessions: sessions.length,
+        totalProjects: projects.length,  // NEW
       }
     };
+  }
+
+  private getProjectName(projectPath: string): string {
+    // Extract a readable project name from the path
+    if (!projectPath || projectPath.startsWith('(project:')) {
+      return projectPath;
+    }
+    const parts = projectPath.split('/');
+    return parts[parts.length - 1] || projectPath;
   }
 
   getAgents(): AgentInfo[] {

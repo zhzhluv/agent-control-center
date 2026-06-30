@@ -428,9 +428,10 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     const x = (e.clientX - rect.left) * (canvas.width / rect.width)
     const y = (e.clientY - rect.top) * (canvas.height / rect.height)
 
+    // Viewport-based coordinates for position: fixed tooltip
     setMousePos({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: e.clientX,
+      y: e.clientY,
     })
 
     // 에이전트 호버 감지 (layout helper 사용 - render와 동일한 좌표)
@@ -453,10 +454,122 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     setHoveredAgent(found)
   }
 
-  const handleClick = () => {
+  const handleClick = (_e: React.MouseEvent<HTMLCanvasElement>) => {
     if (hoveredAgent && onSelectAgent) {
       onSelectAgent(hoveredAgent.id)
     }
+  }
+
+  const handleTouch = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const rect = canvas.getBoundingClientRect()
+    const touch = e.touches[0]
+    const x = (touch.clientX - rect.left) * (canvas.width / rect.width)
+    const y = (touch.clientY - rect.top) * (canvas.height / rect.height)
+
+    // Viewport-based coordinates for position: fixed tooltip
+    setMousePos({
+      x: touch.clientX,
+      y: touch.clientY,
+    })
+
+    // Find touched agent
+    let found: Agent | null = null
+    projectRooms.forEach((room, roomIndex) => {
+      const roomPos = layout.getRoomPosition(roomIndex)
+
+      room.agents.forEach((agent, index) => {
+        const agentX = roomPos.x + 60 + (index % 4) * 80
+        const agentY = roomPos.y + 40 + 40 + Math.floor(index / 4) * 70
+
+        const dist = Math.sqrt((x - agentX) ** 2 + (y - agentY) ** 2)
+        if (dist < 25) {
+          found = agent
+        }
+      })
+    })
+
+    setHoveredAgent(found)
+  }
+
+  const handleTouchEnd = () => {
+    // Keep tooltip visible for a moment on mobile
+    setTimeout(() => {
+      setHoveredAgent(null)
+    }, 2000)
+  }
+
+  const handleFocus = () => {
+    // On focus, show tooltip for selected agent or first agent
+    const allAgents = projectRooms.flatMap(room => room.agents)
+    const targetAgent = allAgents.find(a => a.id === selectedAgentId) || allAgents[0]
+    if (targetAgent) {
+      setHoveredAgent(targetAgent)
+      // Center tooltip position when using keyboard
+      setMousePos({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 3,
+      })
+    }
+  }
+
+  const handleBlur = () => {
+    setHoveredAgent(null)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      if (hoveredAgent && onSelectAgent) {
+        onSelectAgent(hoveredAgent.id)
+      }
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      const allAgents = projectRooms.flatMap(room => room.agents)
+      if (allAgents.length === 0) return
+      const currentIndex = hoveredAgent ? allAgents.findIndex(a => a.id === hoveredAgent.id) : -1
+      const nextIndex = (currentIndex + 1) % allAgents.length
+      setHoveredAgent(allAgents[nextIndex])
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const allAgents = projectRooms.flatMap(room => room.agents)
+      if (allAgents.length === 0) return
+      const currentIndex = hoveredAgent ? allAgents.findIndex(a => a.id === hoveredAgent.id) : 0
+      const prevIndex = (currentIndex - 1 + allAgents.length) % allAgents.length
+      setHoveredAgent(allAgents[prevIndex])
+    }
+  }
+
+  // Calculate clamped tooltip position to prevent overflow
+  const getTooltipStyle = () => {
+    const tooltipWidth = 260
+    const tooltipHeight = 220
+    const padding = 10
+
+    // Clamp to viewport bounds (especially for 390px mobile)
+    let left = mousePos.x + 15
+    let top = mousePos.y - 10
+
+    // Prevent right overflow
+    if (left + tooltipWidth > window.innerWidth - padding) {
+      left = mousePos.x - tooltipWidth - 15
+    }
+    // Prevent left overflow
+    if (left < padding) {
+      left = padding
+    }
+    // Prevent bottom overflow
+    if (top + tooltipHeight > window.innerHeight - padding) {
+      top = window.innerHeight - tooltipHeight - padding
+    }
+    // Prevent top overflow
+    if (top < padding) {
+      top = padding
+    }
+
+    return { left, top }
   }
 
   return (
@@ -468,7 +581,16 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onMouseLeave={() => setHoveredAgent(null)}
+        onTouchStart={handleTouch}
+        onTouchMove={handleTouch}
+        onTouchEnd={handleTouchEnd}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
         className="office-canvas"
+        tabIndex={0}
+        role="img"
+        aria-label="Agent office visualization showing active agents across projects"
       />
 
       {/* 범례 */}
@@ -487,15 +609,23 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
       {hoveredAgent && (
         <div
           className="agent-tooltip"
-          style={{ left: mousePos.x + 15, top: mousePos.y - 10 }}
+          style={getTooltipStyle()}
         >
           <div className="tooltip-header">
-            <span className={`tooltip-status ${hoveredAgent.status}`}>●</span>
+            <span className={`tooltip-status ${hoveredAgent.status} ${hoveredAgent.isStale ? 'stale' : ''}`}>●</span>
             <span className="tooltip-name">{hoveredAgent.name}</span>
             <span className={`tooltip-type ${hoveredAgent.agentType || 'main'}`}>
               {hoveredAgent.agentType === 'sub' ? 'SUB' : 'MAIN'}
             </span>
           </div>
+          {hoveredAgent.isStale && (
+            <div className="tooltip-stale-badge">Stale - No activity for 5+ min</div>
+          )}
+          {hoveredAgent.projectPath && (
+            <div className="tooltip-project" title={hoveredAgent.projectPath}>
+              {hoveredAgent.projectPath}
+            </div>
+          )}
           {hoveredAgent.currentTask && (
             <div className="tooltip-task">{hoveredAgent.currentTask}</div>
           )}

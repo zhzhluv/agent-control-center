@@ -41,6 +41,17 @@ interface Metrics {
   activeAgents: number
   totalAgents: number
   activeSessions: number
+  idleSessions?: number
+  staleSessions?: number
+  totalSessions?: number
+  totalProjects?: number
+}
+
+interface ProjectInfo {
+  path: string
+  name: string
+  sessions?: Session[]  // Server sends full sessions array
+  lastActivity?: string  // ISO string (Date serialized)
 }
 
 interface AppState {
@@ -48,6 +59,7 @@ interface AppState {
   sessions: Session[]
   agents: Agent[]
   metrics: Metrics
+  projects: ProjectInfo[]
 }
 
 // WebSocket connection state for stability tracking
@@ -337,6 +349,7 @@ export default function App() {
     sessions: [],
     agents: [],
     metrics: initialMetrics,
+    projects: [],
   })
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('authToken') || '')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -399,10 +412,16 @@ export default function App() {
   )
   const timeline = useMemo(() => buildTimeline(agentsWithStale), [agentsWithStale])
   const fullTimeline = useMemo(() => buildFullTimeline(agentsWithStale), [agentsWithStale])
-  const activeProjectCount = useMemo(
-    () => new Set(sessionsWithStale.map(session => session.projectPath)).size,
-    [sessionsWithStale],
-  )
+  const activeProjectCount = useMemo(() => {
+    // Priority: metrics.totalProjects (if number) > projects.length (if > 0) > session projectPath Set
+    if (typeof state.metrics.totalProjects === 'number') {
+      return state.metrics.totalProjects
+    }
+    if (state.projects.length > 0) {
+      return state.projects.length
+    }
+    return new Set(sessionsWithStale.map(session => session.projectPath)).size
+  }, [state.metrics.totalProjects, state.projects.length, sessionsWithStale])
 
   // Unique agent names for filter dropdown
   const uniqueAgentNames = useMemo(() => {
@@ -642,6 +661,7 @@ export default function App() {
             sessions: data.sessions || current.sessions,
             agents: data.agents || current.agents,
             metrics: data.metrics || current.metrics,
+            projects: data.projects || current.projects,
           }))
           break
         case 'agent_updated':
@@ -871,8 +891,8 @@ export default function App() {
                 <h2>직원 운영실</h2>
               </div>
               <div className="office-summary">
-                <span>{activeProjectCount} 프로젝트</span>
-                <span>{state.sessions.length} 세션</span>
+                <span>{activeProjectCount} {activeProjectCount === 1 ? '프로젝트' : '프로젝트'}</span>
+                <span>{state.sessions.length} {state.sessions.length === 1 ? '세션' : '세션'}</span>
               </div>
             </div>
 
