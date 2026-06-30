@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Agent Control Center - launchd Service Configuration
+
+  SETUP REQUIRED:
+  1. Replace YOUR_USERNAME with your actual username
+  2. Create ~/.agent-control-center.env with 600 permissions:
+     echo "AUTH_TOKEN=$(openssl rand -hex 32)" > ~/.agent-control-center.env
+     chmod 600 ~/.agent-control-center.env
+  3. Verify npm path: which npm
+     - Intel Mac: /usr/local/bin/npm
+     - Apple Silicon: /opt/homebrew/bin/npm
+  4. Copy to ~/Library/LaunchAgents/ and load with launchctl
+
+  NEVER hardcode AUTH_TOKEN in this file.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.zhluv.agent-control-center</string>
+
+    <!-- Shell wrapper loads env file then runs npm start -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-lc</string>
+        <string>set -a; . "$HOME/.agent-control-center.env"; set +a; npm start</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/YOUR_USERNAME/Projects/agent-control-center</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>NODE_ENV</key>
+        <string>production</string>
+        <!-- PATH includes both Intel and Apple Silicon Homebrew locations -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/agent-control-center.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/agent-control-center.error.log</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <!-- Restart delay after crash -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <!-- Nice level (lower priority) -->
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>

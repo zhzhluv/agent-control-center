@@ -113,37 +113,49 @@ cd client && npm install && cd ..
 echo "빌드 중..."
 npm run build
 
-# Generate auth token
-AUTH_TOKEN=$(openssl rand -hex 16)
-echo "AUTH_TOKEN=$AUTH_TOKEN" > .env
-echo "PORT=9876" >> .env
+# Create secure environment file (token never displayed)
+ENV_FILE="$HOME/.agent-control-center.env"
+echo "AUTH_TOKEN=$(openssl rand -hex 32)" > "$ENV_FILE"
+echo "NODE_ENV=production" >> "$ENV_FILE"
+echo "PORT=9876" >> "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+
+# Also create project .env for local development
+cp "$ENV_FILE" .env
+chmod 600 .env
 
 echo ""
 echo -e "${YELLOW}► 6/6 서비스 설정 중...${NC}"
 
-# Create LaunchAgent for auto-start
+# Create logs directory
+mkdir -p "$INSTALL_DIR/logs"
+
+# Create LaunchAgent that loads env file (never hardcodes token)
 PLIST_PATH="$HOME/Library/LaunchAgents/com.agent-control-center.plist"
 
 cat > "$PLIST_PATH" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Agent Control Center - launchd Service
+  AUTH_TOKEN is loaded from ~/.agent-control-center.env (never hardcoded here)
+-->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>com.agent-control-center</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$(which node)</string>
-        <string>${INSTALL_DIR}/server/dist/index.js</string>
+        <string>/bin/sh</string>
+        <string>-lc</string>
+        <string>set -a; . "\$HOME/.agent-control-center.env"; set +a; npm start</string>
     </array>
     <key>WorkingDirectory</key>
     <string>${INSTALL_DIR}</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>AUTH_TOKEN</key>
-        <string>${AUTH_TOKEN}</string>
-        <key>PORT</key>
-        <string>9876</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -153,12 +165,11 @@ cat > "$PLIST_PATH" << EOF
     <string>${INSTALL_DIR}/logs/stdout.log</string>
     <key>StandardErrorPath</key>
     <string>${INSTALL_DIR}/logs/stderr.log</string>
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
 </dict>
 </plist>
 EOF
-
-# Create logs directory
-mkdir -p "$INSTALL_DIR/logs"
 
 # Load the service
 launchctl unload "$PLIST_PATH" 2>/dev/null || true
@@ -171,18 +182,26 @@ echo "║                    설치 완료! 🎉                          ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
+echo -e "${BLUE}► 보안 정보${NC}"
+echo ""
+echo "   인증 토큰 저장 위치: ~/.agent-control-center.env"
+echo "   권한 확인: ls -la ~/.agent-control-center.env"
+echo "   (600 권한 = 본인만 읽기/쓰기 가능)"
+echo ""
 echo -e "${BLUE}► 접속 정보${NC}"
 echo ""
 echo "   로컬 접속: http://localhost:9876"
 echo ""
-echo -e "   ${YELLOW}인증 토큰 (중요! 저장하세요):${NC}"
-echo -e "   ${GREEN}${AUTH_TOKEN}${NC}"
+echo -e "${BLUE}► iPad 접속 시 토큰 확인${NC}"
+echo ""
+echo "   토큰은 ~/.agent-control-center.env에 저장되어 있습니다."
+echo "   개인 터미널에서 필요한 경우에만 안전하게 열람하십시오."
 echo ""
 echo -e "${BLUE}► 다음 단계${NC}"
 echo ""
 echo "   1. Tailscale 로그인: tailscale up"
 echo "   2. Tailscale IP 확인: tailscale ip"
-echo "   3. 아이패드에서 접속: http://<TAILSCALE_IP>:9876"
+echo "   3. iPad에서 접속: http://<TAILSCALE_IP>:9876"
 echo ""
 echo -e "${BLUE}► 유용한 명령어${NC}"
 echo ""
