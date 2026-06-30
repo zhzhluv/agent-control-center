@@ -12,7 +12,8 @@
     "build:client": "cd client && npm run build",
     "start": "node server/dist/index.js",
     "setup": "npm install && cd client && npm install",
-    "test": "npm run build && ./smoke-test.sh && ./test-reports-api.sh",
+    "test": "npm run build && npm run test:redact && ./smoke-test.sh && ./test-reports-api.sh",
+    "test:redact": "npx tsx server/src/redact.test.ts",
     "test:smoke": "./smoke-test.sh",
     "test:reports": "./test-reports-api.sh"
   },

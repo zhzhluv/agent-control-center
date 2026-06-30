@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import { EventEmitter } from 'events';
 import readline from 'readline';
+import { redactSecrets } from './redact.js';
 
 // 최근 활동 기록
 export interface ActivityLog {
@@ -32,6 +33,7 @@ export interface AgentInfo {
   lastActivity: Date;
   projectPath: string;
   sessionId: string;
+  source: 'claude' | 'codex';          // Source provider
 }
 
 export interface ProjectInfo {
@@ -54,6 +56,7 @@ export interface SessionInfo {
     input: number;
     output: number;
   };
+  source: 'claude' | 'codex';          // Source provider
 }
 
 export class ClaudeMonitor extends EventEmitter {
@@ -184,10 +187,11 @@ export class ClaudeMonitor extends EventEmitter {
 
           // 사용자 메시지를 현재 작업으로 사용
           if (data.message?.content && data.type === 'user') {
-            const content = typeof data.message.content === 'string'
+            const rawContent = typeof data.message.content === 'string'
               ? data.message.content
               : data.message.content[0]?.text || '';
-            if (content && content !== 'Warmup') {
+            if (rawContent && rawContent !== 'Warmup') {
+              const content = redactSecrets(rawContent);
               lastMessageFull = content;
               lastMessage = content.length > 80 ? content.slice(0, 80) + '...' : content;
             }
@@ -262,6 +266,7 @@ export class ClaudeMonitor extends EventEmitter {
           lastActivity: stat.mtime,
           projectPath: cwd || this.pathFromProjectName(projectName),
           sessionId: sessionId,
+          source: 'claude',
         };
 
         this.agents.set(agentId, agent);
@@ -299,6 +304,7 @@ export class ClaudeMonitor extends EventEmitter {
             input: 0,
             output: 0,
           },
+          source: 'claude',
         };
 
         this.sessions.set(sessionId, session);
@@ -329,6 +335,7 @@ export class ClaudeMonitor extends EventEmitter {
             lastActivity: stat.mtime,
             projectPath: actualProjectPath,
             sessionId: sessionId,
+            source: 'claude',
           };
 
           this.agents.set(mainAgentId, mainAgent);
@@ -579,8 +586,9 @@ export class ClaudeMonitor extends EventEmitter {
       case 'Write':
         return `📝 ${this.shortenPath(input.file_path as string)}`;
       case 'Bash':
-        const cmd = (input.command as string || '').slice(0, 40);
-        return `💻 ${cmd}${cmd.length >= 40 ? '...' : ''}`;
+        const rawCmd = input.command as string || '';
+        const safeCmd = redactSecrets(rawCmd).slice(0, 40);
+        return `💻 ${safeCmd}${safeCmd.length >= 40 ? '...' : ''}`;
       case 'Glob':
         return `🔍 ${input.pattern}`;
       case 'Grep':

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import './App.css'
 import PixelOffice from './components/PixelOffice'
+import { sanitizeForDisplay } from './utils/sanitize'
 
 interface ActivityLog {
   timestamp: string
@@ -23,6 +24,7 @@ interface Agent {
   cost: number
   projectPath?: string
   isStale?: boolean
+  source?: 'claude' | 'codex'  // Source of the agent session
 }
 
 interface Session {
@@ -32,6 +34,7 @@ interface Session {
   isActive: boolean
   lastActivity: string
   isStale?: boolean
+  source?: 'claude' | 'codex'  // Source of the session
 }
 
 interface Metrics {
@@ -80,6 +83,7 @@ interface TimelineEvent {
   type: ActivityLog['type']
   summary: string
   tool?: string
+  source?: 'claude' | 'codex'
 }
 
 interface Report {
@@ -212,6 +216,14 @@ function getStatusLabel(status: Agent['status']) {
   return '휴식'
 }
 
+function getSourceBadge(source?: 'claude' | 'codex') {
+  if (!source) return null
+  if (source === 'claude') {
+    return { label: 'C', title: 'Claude', className: 'claude' }
+  }
+  return { label: 'X', title: 'Codex', className: 'codex' }
+}
+
 type DerivedStatus =
   | 'error'
   | 'approval_needed'
@@ -322,6 +334,7 @@ function buildTimeline(agents: Agent[]): TimelineEvent[] {
         type: activity.type,
         summary: activity.summary,
         tool: activity.tool,
+        source: agent.source,
       }))
     )
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
@@ -338,6 +351,7 @@ function buildFullTimeline(agents: Agent[]): TimelineEvent[] {
         type: activity.type,
         summary: activity.summary,
         tool: activity.tool,
+        source: agent.source,
       }))
     )
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
@@ -916,7 +930,17 @@ export default function App() {
                 <div className="agent-profile">
                   <span className={`profile-dot ${selectedAgent.status} ${selectedAgent.isStale ? 'stale' : ''}`} />
                   <div>
-                    <strong>{selectedAgent.name}</strong>
+                    <strong>
+                      {selectedAgent.name}
+                      {(() => {
+                        const sourceBadge = getSourceBadge(selectedAgent.source)
+                        return sourceBadge ? (
+                          <span className={`source-badge ${sourceBadge.className}`} title={sourceBadge.title} style={{ marginLeft: '6px' }}>
+                            {sourceBadge.label}
+                          </span>
+                        ) : null
+                      })()}
+                    </strong>
                     <p>{getRole(selectedAgent)} · {selectedAgent.agentType === 'sub' ? '서브 에이전트' : '메인 에이전트'}</p>
                   </div>
                   <div className="status-pills">
@@ -934,7 +958,7 @@ export default function App() {
 
                 <div className="task-card">
                   <small>현재 미션</small>
-                  <p>{selectedAgent.currentTaskFull || selectedAgent.currentTask || '대기 중인 작업이 없습니다.'}</p>
+                  <p>{sanitizeForDisplay(selectedAgent.currentTaskFull || selectedAgent.currentTask) || '대기 중인 작업이 없습니다.'}</p>
                   {selectedAgent.isStale && (() => {
                     const lastTimestamp = getLastActivityTimestamp(selectedAgent)
                     return lastTimestamp ? (
@@ -975,7 +999,7 @@ export default function App() {
                       <div className="mini-event" key={`${activity.timestamp}-${index}`}>
                         <span className={`event-type ${activity.type}`} />
                         <div>
-                          <strong>{activity.summary}</strong>
+                          <strong>{sanitizeForDisplay(activity.summary)}</strong>
                           <small>{formatTime(activity.timestamp)}</small>
                         </div>
                       </div>
@@ -1011,6 +1035,7 @@ export default function App() {
                 agentsWithStale.map(agent => {
                   const derived = getDerivedStatus(agent)
                   const derivedLabel = getDerivedStatusLabel(derived)
+                  const sourceBadge = getSourceBadge(agent.source)
                   return (
                     <button
                       type="button"
@@ -1020,7 +1045,14 @@ export default function App() {
                     >
                       <span className={`profile-dot ${agent.status} ${derived ? `derived-${derived}` : ''} ${agent.isStale ? 'stale' : ''}`} />
                       <span>
-                        <strong>{agent.name}</strong>
+                        <strong>
+                          {agent.name}
+                          {sourceBadge && (
+                            <span className={`source-badge ${sourceBadge.className}`} title={sourceBadge.title} style={{ marginLeft: '6px' }}>
+                              {sourceBadge.label}
+                            </span>
+                          )}
+                        </strong>
                         <small>{getRole(agent)} · {shortProject(agent.projectPath)}{derivedLabel ? ` · ${derivedLabel}` : ''}</small>
                       </span>
                       <em className={agent.isStale ? 'stale-text' : ''}>{getStatusLabel(agent.status)}</em>
@@ -1046,16 +1078,30 @@ export default function App() {
                   <p>도구 사용, 결과, 상태 변화가 여기에 쌓입니다.</p>
                 </div>
               ) : (
-                timeline.map(event => (
-                  <div className="event-row" key={event.id}>
-                    <span className={`event-type ${event.type}`} />
-                    <div>
-                      <strong>{event.summary}</strong>
-                      <p>{event.agentName}{event.tool ? ` · ${event.tool}` : ''}</p>
+                timeline.map(event => {
+                  const sourceBadge = getSourceBadge(event.source)
+                  return (
+                    <div className="event-row" key={event.id}>
+                      <span className={`event-type ${event.type}`} />
+                      <div>
+                        <strong>{sanitizeForDisplay(event.summary)}</strong>
+                        <p>
+                          {event.agentName}
+                          {sourceBadge && (
+                            <>
+                              {' '}
+                              <span className={`source-badge ${sourceBadge.className}`} title={sourceBadge.title} style={{ marginLeft: '4px' }}>
+                                {sourceBadge.label}
+                              </span>
+                            </>
+                          )}
+                          {event.tool ? ` · ${event.tool}` : ''}
+                        </p>
+                      </div>
+                      <time>{formatTime(event.timestamp)}</time>
                     </div>
-                    <time>{formatTime(event.timestamp)}</time>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </section>
@@ -1128,14 +1174,22 @@ export default function App() {
                 filteredLogs.map(event => {
                   const agent = agentsWithStale.find(a => a.name === event.agentName)
                   const projectName = shortProject(agent?.projectPath)
+                  const sourceBadge = getSourceBadge(event.source)
                   return (
                     <div className="log-entry" key={event.id}>
                       <span className="log-time">{formatTime(event.timestamp)}</span>
-                      <span className="log-agent">{event.agentName}</span>
+                      <span className="log-agent">
+                        {event.agentName}
+                        {sourceBadge && (
+                          <span className={`source-badge ${sourceBadge.className}`} title={sourceBadge.title} style={{ marginLeft: '4px' }}>
+                            {sourceBadge.label}
+                          </span>
+                        )}
+                      </span>
                       <span className="log-project">{projectName}</span>
                       <span className={`log-type ${event.type}`}>{getTypeLabel(event.type)}</span>
                       {event.tool && <span className="log-tool">{event.tool}</span>}
-                      <span className="log-summary">{event.summary}</span>
+                      <span className="log-summary">{sanitizeForDisplay(event.summary)}</span>
                     </div>
                   )
                 })

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './PixelOffice.css'
+import { sanitizeForDisplay } from '../utils/sanitize'
 
 interface ActivityLog {
   timestamp: string
@@ -21,6 +22,7 @@ export interface Agent {
   cost: number
   projectPath?: string
   isStale?: boolean
+  source?: 'claude' | 'codex'
 }
 
 interface PixelOfficeProps {
@@ -614,6 +616,11 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
           <div className="tooltip-header">
             <span className={`tooltip-status ${hoveredAgent.status} ${hoveredAgent.isStale ? 'stale' : ''}`}>●</span>
             <span className="tooltip-name">{hoveredAgent.name}</span>
+            {hoveredAgent.source && (
+              <span className={`source-badge ${hoveredAgent.source}`} title={hoveredAgent.source === 'claude' ? 'Claude' : 'Codex'}>
+                {hoveredAgent.source === 'claude' ? 'C' : 'X'}
+              </span>
+            )}
             <span className={`tooltip-type ${hoveredAgent.agentType || 'main'}`}>
               {hoveredAgent.agentType === 'sub' ? 'SUB' : 'MAIN'}
             </span>
@@ -627,7 +634,7 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
             </div>
           )}
           {hoveredAgent.currentTask && (
-            <div className="tooltip-task">{hoveredAgent.currentTask}</div>
+            <div className="tooltip-task">{sanitizeForDisplay(hoveredAgent.currentTask)}</div>
           )}
           <div className="tooltip-stats">
             <span>In: {(hoveredAgent.tokens.input / 1000).toFixed(1)}k</span>
@@ -644,7 +651,7 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
           {hoveredAgent.recentActivity && hoveredAgent.recentActivity.length > 0 && (
             <div className="tooltip-activity">
               {hoveredAgent.recentActivity.slice(-3).reverse().map((act, i) => (
-                <div key={i} className="tooltip-activity-item">{act.summary}</div>
+                <div key={i} className="tooltip-activity-item">{sanitizeForDisplay(act.summary)}</div>
               ))}
             </div>
           )}

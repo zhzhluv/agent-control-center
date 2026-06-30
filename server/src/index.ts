@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { writeFileSync, readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { ClaudeMonitor } from './claude-monitor.js';
+import { CodexMonitor } from './codex-monitor.js';
 import { AuthMiddleware } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,10 +71,84 @@ const RATE_LIMIT_MAX = IS_PRODUCTION ? 30 : 100;  // 프로덕션: 30회, 개발
 const auth = new AuthMiddleware(AUTH_TOKEN);
 
 // Claude Monitor instance (파일 워칭 기반)
-const monitor = new ClaudeMonitor();
+const claudeMonitor = new ClaudeMonitor();
+
+// Codex Monitor instance
+const codexMonitor = new CodexMonitor();
 
 // Store connected clients
 const clients = new Set<WebSocket>();
+
+// Helper function to merge status from both monitors
+function getMergedStatus() {
+  const claudeStatus = claudeMonitor.getStatus();
+  const codexStatus = codexMonitor.getStatus();
+
+  // Merge agents and sessions
+  const allAgents = [...claudeStatus.agents, ...codexStatus.agents];
+  const allSessions = [...claudeStatus.sessions, ...codexStatus.sessions];
+
+  // Merge projects (group by projectPath)
+  const projectsMap = new Map();
+
+  allSessions.forEach(session => {
+    const projectPath = session.projectPath;
+
+    if (!projectsMap.has(projectPath)) {
+      projectsMap.set(projectPath, {
+        path: projectPath,
+        name: getProjectName(projectPath),
+        sessions: [],
+        lastActivity: session.lastActivity,
+      });
+    }
+
+    const project = projectsMap.get(projectPath);
+    project.sessions.push(session);
+
+    if (session.lastActivity > project.lastActivity) {
+      project.lastActivity = session.lastActivity;
+    }
+  });
+
+  const projects = Array.from(projectsMap.values());
+
+  // Merge metrics
+  const totalTokens = allAgents.reduce((sum, a) => ({
+    input: sum.input + a.tokens.input,
+    output: sum.output + a.tokens.output,
+    cacheRead: sum.cacheRead + a.tokens.cacheRead,
+    cacheWrite: sum.cacheWrite + a.tokens.cacheWrite,
+  }), { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+  const totalCost = allAgents.reduce((sum, a) => sum + a.cost, 0);
+
+  return {
+    agents: allAgents,
+    sessions: allSessions,
+    projects,
+    metrics: {
+      totalTokens,
+      totalCost,
+      cacheHitRate: 0,
+      activeAgents: allAgents.filter(a => a.status === 'working').length,
+      totalAgents: allAgents.length,
+      activeSessions: allSessions.filter(s => s.state === 'active').length,
+      idleSessions: allSessions.filter(s => s.state === 'idle').length,
+      staleSessions: allSessions.filter(s => s.state === 'stale').length,
+      totalSessions: allSessions.length,
+      totalProjects: projects.length,
+    }
+  };
+}
+
+function getProjectName(projectPath: string): string {
+  if (!projectPath || projectPath.startsWith('(project:')) {
+    return projectPath;
+  }
+  const parts = projectPath.split('/');
+  return parts[parts.length - 1] || projectPath;
+}
 
 // Server start time for uptime calculation
 const SERVER_START_TIME = new Date();
@@ -98,15 +173,28 @@ function broadcast(data: object) {
 }
 
 // Monitor 이벤트 연결
-monitor.on('status_update', (status) => {
-  broadcast({ type: 'status_update', data: status });
+claudeMonitor.on('status_update', () => {
+  broadcast({ type: 'status_update', data: getMergedStatus() });
 });
 
-monitor.on('agent_updated', (agent) => {
+claudeMonitor.on('agent_updated', (agent) => {
   broadcast({ type: 'agent_updated', data: agent });
 });
 
-monitor.on('session_updated', (session) => {
+claudeMonitor.on('session_updated', (session) => {
+  broadcast({ type: 'session_updated', data: session });
+});
+
+// Codex Monitor 이벤트 연결
+codexMonitor.on('status_update', () => {
+  broadcast({ type: 'status_update', data: getMergedStatus() });
+});
+
+codexMonitor.on('agent_updated', (agent) => {
+  broadcast({ type: 'agent_updated', data: agent });
+});
+
+codexMonitor.on('session_updated', (session) => {
   broadcast({ type: 'session_updated', data: session });
 });
 
@@ -155,8 +243,8 @@ wss.on('connection', (ws, req) => {
   connectionStats.lastConnected = new Date();
   connectionStats.totalConnections++;
 
-  // Send current state
-  const status = monitor.getStatus();
+  // Send current state (merged from both monitors)
+  const status = getMergedStatus();
   ws.send(JSON.stringify({
     type: 'init',
     data: status
@@ -177,7 +265,7 @@ wss.on('connection', (ws, req) => {
 
         case 'refresh':
           // 상태 새로고침 (status_update로 응답하여 클라이언트 핸들러와 일치)
-          const currentStatus = monitor.getStatus();
+          const currentStatus = getMergedStatus();
           ws.send(JSON.stringify({ type: 'status_update', data: currentStatus }));
           break;
 
@@ -204,19 +292,23 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/status', auth.verify, (req, res) => {
-  res.json(monitor.getStatus());
+  res.json(getMergedStatus());
 });
 
 app.get('/api/sessions', auth.verify, (req, res) => {
-  res.json(monitor.getSessions());
+  const claudeSessions = claudeMonitor.getSessions();
+  const codexSessions = codexMonitor.getSessions();
+  res.json([...claudeSessions, ...codexSessions]);
 });
 
 app.get('/api/agents', auth.verify, (req, res) => {
-  res.json(monitor.getAgents());
+  const claudeAgents = claudeMonitor.getAgents();
+  const codexAgents = codexMonitor.getAgents();
+  res.json([...claudeAgents, ...codexAgents]);
 });
 
 app.get('/api/metrics', auth.verify, (req, res) => {
-  res.json(monitor.getStatus().metrics);
+  res.json(getMergedStatus().metrics);
 });
 
 // Helper: count .md files in .agents directory
@@ -246,7 +338,7 @@ function countReports(): number {
 
 // Diagnostics API
 app.get('/api/diagnostics', auth.verify, (req, res) => {
-  const status = monitor.getStatus();
+  const status = getMergedStatus();
   const uptime = process.uptime();
 
   // Count watched projects (unique project paths from sessions)
@@ -394,10 +486,13 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
 });
 
-// Start server and monitor
+// Start server and monitors
 async function start() {
   // Claude 모니터링 시작
-  await monitor.start();
+  await claudeMonitor.start();
+
+  // Codex 모니터링 시작
+  await codexMonitor.start();
 
   server.listen(PORT, () => {
     console.log(`
@@ -407,7 +502,8 @@ async function start() {
 ║   Local:   http://localhost:${PORT}                   ║
 ║   Network: Check your Tailscale IP                   ║
 ║                                                      ║
-║   Mode: MONITORING (watching ~/.claude/)             ║
+║   Mode: MONITORING (Claude + Codex)                  ║
+║   Watching: ~/.claude/ and ~/.codex/                 ║
 ║   Auth:  ${IS_PRODUCTION ? 'Production (token required)' : 'Development (see /tmp/agent-control-center-token)'}
 ╚══════════════════════════════════════════════════════╝
     `);
@@ -419,7 +515,8 @@ start().catch(console.error);
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('Shutting down...');
-  monitor.stop();
+  claudeMonitor.stop();
+  codexMonitor.stop();
   server.close();
   process.exit(0);
 });

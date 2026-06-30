@@ -36,8 +36,9 @@ OFFICE_LAYOUT.txt
 PIXEL_OFFICE_SUMMARY.md
 QUICKSTART.md
 
-# Unused development files
-client/src/utils/
+# Unused development files (except sanitize.ts)
+client/src/utils/*
+!client/src/utils/sanitize.ts
 client/src/components/*.example.tsx
 client/src/components/*_README.md
 client/src/components/PIXEL_OFFICE_README.md
