@@ -4,6 +4,7 @@ import os from 'os';
 import { EventEmitter } from 'events';
 import readline from 'readline';
 import { redactSecrets } from './redact.js';
+import { checkClaudeNeedsReview } from './needs-review.js';
 
 // 최근 활동 기록
 export interface ActivityLog {
@@ -723,72 +724,11 @@ export class ClaudeMonitor extends EventEmitter {
   }
 
   /**
-   * Check if an agent is a candidate for review based on conservative heuristics:
-   * - Last tool_result was successful (is_error: false)
-   * - No tool_use after the last successful result
-   * - No new user messages after the result
-   * - At least REVIEW_CANDIDATE_THRESHOLD_SECONDS have passed since last activity
-   * - No recent error results
+   * Check if an agent is a candidate for review based on conservative heuristics.
+   * Delegates to the shared checkClaudeNeedsReview function.
    */
   private checkNeedsReview(agent: AgentInfo, now: number): { needsReview: boolean; reason?: string } {
-    // Must be idle (not actively working)
-    if (agent.status !== 'idle') {
-      return { needsReview: false };
-    }
-
-    // Must have some recent activity
-    if (agent.recentActivity.length === 0) {
-      return { needsReview: false };
-    }
-
-    // Check if enough time has passed since last activity
-    const ageSeconds = (now - agent.lastActivity.getTime()) / 1000;
-    if (ageSeconds < this.REVIEW_CANDIDATE_THRESHOLD_SECONDS) {
-      return { needsReview: false };
-    }
-
-    // Check for any recent errors (disqualifies from review)
-    const hasRecentError = agent.recentActivity.some(activity => activity.is_error === true);
-    if (hasRecentError) {
-      return { needsReview: false };
-    }
-
-    // Find the last tool_result
-    let lastResultIndex = -1;
-    for (let i = agent.recentActivity.length - 1; i >= 0; i--) {
-      if (agent.recentActivity[i].type === 'result') {
-        lastResultIndex = i;
-        break;
-      }
-    }
-
-    // No tool results found
-    if (lastResultIndex === -1) {
-      return { needsReview: false };
-    }
-
-    const lastResult = agent.recentActivity[lastResultIndex];
-
-    // Last result must be successful
-    if (lastResult.is_error === true) {
-      return { needsReview: false };
-    }
-
-    // Check if there are any tool_use or message activities after the last result
-    const activitiesAfterResult = agent.recentActivity.slice(lastResultIndex + 1);
-    const hasActivityAfterResult = activitiesAfterResult.some(
-      activity => activity.type === 'tool_use' || activity.type === 'message'
-    );
-
-    if (hasActivityAfterResult) {
-      return { needsReview: false };
-    }
-
-    // All conditions met - this is a review candidate
-    return {
-      needsReview: true,
-      reason: `Successful operation completed, no activity for ${Math.floor(ageSeconds)}s`
-    };
+    return checkClaudeNeedsReview(agent, now, this.REVIEW_CANDIDATE_THRESHOLD_SECONDS);
   }
 
   getStatus() {

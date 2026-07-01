@@ -5,6 +5,7 @@ import { EventEmitter } from 'events';
 import readline from 'readline';
 import type { AgentInfo, SessionInfo, SessionState, ActivityLog } from './claude-monitor.js';
 import { redactSecrets } from './redact.js';
+import { checkCodexNeedsReview } from './needs-review.js';
 
 export class CodexMonitor extends EventEmitter {
   private codexHome = path.join(os.homedir(), '.codex');
@@ -411,65 +412,10 @@ export class CodexMonitor extends EventEmitter {
    * - At least REVIEW_CANDIDATE_THRESHOLD_SECONDS have passed since last activity
    * - No recent errors in activity log
    * Note: Codex monitoring has limited activity tracking, so this is a simplified check
+   * Delegates to the shared checkCodexNeedsReview function.
    */
   private checkNeedsReview(agent: AgentInfo, now: number): { needsReview: boolean; reason?: string } {
-    // Must be idle (not actively working)
-    if (agent.status !== 'idle') {
-      return { needsReview: false };
-    }
-
-    // 보수적 접근: activity가 전혀 없는 idle 세션은 needsReview로 만들지 않음
-    if (agent.recentActivity.length === 0) {
-      return { needsReview: false };
-    }
-
-    // Check if enough time has passed since last activity
-    const ageSeconds = (now - agent.lastActivity.getTime()) / 1000;
-    if (ageSeconds < this.REVIEW_CANDIDATE_THRESHOLD_SECONDS) {
-      return { needsReview: false };
-    }
-
-    // Check for errors in activity
-    const hasRecentError = agent.recentActivity.some(activity => activity.is_error === true);
-    if (hasRecentError) {
-      return { needsReview: false };
-    }
-
-    // Find the last tool_result (assistant response)
-    let lastResultIndex = -1;
-    for (let i = agent.recentActivity.length - 1; i >= 0; i--) {
-      if (agent.recentActivity[i].type === 'result') {
-        lastResultIndex = i;
-        break;
-      }
-    }
-
-    // 보수적 접근: assistant/result가 없으면 needsReview로 보지 않음
-    // user message만 있는 세션은 검수 필요 후보가 아님
-    if (lastResultIndex === -1) {
-      return { needsReview: false };
-    }
-
-    // Result exists - ensure it's successful and no activity after
-    const lastResult = agent.recentActivity[lastResultIndex];
-    if (lastResult.is_error === true) {
-      return { needsReview: false };
-    }
-
-    const activitiesAfterResult = agent.recentActivity.slice(lastResultIndex + 1);
-    const hasActivityAfterResult = activitiesAfterResult.some(
-      activity => activity.type === 'tool_use' || activity.type === 'message'
-    );
-
-    if (hasActivityAfterResult) {
-      return { needsReview: false };
-    }
-
-    // All conditions met - this is a review candidate
-    return {
-      needsReview: true,
-      reason: `Successful operation completed, idle for ${Math.floor(ageSeconds)}s`
-    };
+    return checkCodexNeedsReview(agent, now, this.REVIEW_CANDIDATE_THRESHOLD_SECONDS);
   }
 
   private watchSessionsDir() {
