@@ -435,6 +435,19 @@ export default function App() {
   // Dedupe tracking for notifications
   const notifiedAgentsRef = useRef<Set<string>>(new Set())
 
+  // Refs for notification state to avoid stale closure in WebSocket callback
+  const notificationEnabledRef = useRef(notificationEnabled)
+  const notificationPermissionRef = useRef(notificationPermission)
+
+  // Sync notification state to refs to avoid stale closure
+  useEffect(() => {
+    notificationEnabledRef.current = notificationEnabled
+  }, [notificationEnabled])
+
+  useEffect(() => {
+    notificationPermissionRef.current = notificationPermission
+  }, [notificationPermission])
+
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
   const shouldReconnectRef = useRef(true)
@@ -696,9 +709,10 @@ export default function App() {
     }
   }, [notificationEnabled, requestNotificationPermission])
 
-  // Show browser notification
+  // Show browser notification (uses refs to avoid stale closure in WebSocket callback)
   const showBrowserNotification = useCallback((agent: Agent) => {
-    if (!notificationEnabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') {
+    // Use refs to get latest notification settings (avoids stale closure)
+    if (!notificationEnabledRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') {
       return
     }
 
@@ -718,7 +732,7 @@ export default function App() {
 
     // Auto-close after 10 seconds
     setTimeout(() => notification.close(), 10000)
-  }, [notificationEnabled, setSelectedAgentId])
+  }, [setSelectedAgentId]) // notificationEnabled removed - using ref for latest value
 
   // Show in-app toast
   const showReviewToast = useCallback((agent: Agent) => {
@@ -1287,7 +1301,7 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  <ReviewQueue agents={agentsWithStale} onSelectAgent={setSelectedAgentId} />
+                  <ReviewQueue agents={agentsWithStale} onSelectAgent={setSelectedAgentId} onUpdateReviewState={updateReviewState} />
                   {agentsWithStale.map(agent => {
                   const derived = getDerivedStatus(agent)
                   const derivedLabel = getDerivedStatusLabel(derived)

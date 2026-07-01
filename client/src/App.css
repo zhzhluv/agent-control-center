@@ -2212,6 +2212,95 @@ button.danger {
   font-size: 11px;
 }
 
+/* Review Queue Filters */
+.review-queue-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.filter-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.filter-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.filter-btn.active {
+  background: rgba(48, 195, 168, 0.15);
+  border-color: rgba(48, 195, 168, 0.4);
+  color: #30c3a8;
+}
+
+/* Review Queue Item Actions */
+.review-queue-item {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.review-item-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.review-queue-item:hover .review-item-actions {
+  opacity: 1;
+}
+
+.action-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.action-btn.ack:hover {
+  background: rgba(48, 195, 168, 0.2);
+  border-color: rgba(48, 195, 168, 0.4);
+  color: #30c3a8;
+}
+
+.action-btn.dismiss:hover {
+  background: rgba(255, 100, 100, 0.15);
+  border-color: rgba(255, 100, 100, 0.3);
+  color: #ff6464;
+}
+
+/* Review Queue Empty State */
+.review-queue-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+}
+
 /* Mobile responsiveness for review queue */
 @media (max-width: 720px) {
   .review-toast-container {
@@ -2263,5 +2352,25 @@ button.danger {
 
   .review-item-content small {
     font-size: 10px;
+  }
+
+  .review-queue-filters {
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .filter-btn {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+
+  .review-item-actions {
+    opacity: 1;
+  }
+
+  .action-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
   }
 }
