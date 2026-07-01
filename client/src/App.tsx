@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import './App.css'
 import PixelOffice from './components/PixelOffice'
+import ReviewQueue from './components/ReviewQueue'
 import { sanitizeForDisplay } from './utils/sanitize'
 
 interface ActivityLog {
@@ -413,6 +414,27 @@ export default function App() {
     nextRetryDelayMs: 1000,
   })
 
+  // Notification state
+  const [notificationEnabled, setNotificationEnabled] = useState(() => {
+    return localStorage.getItem('notificationEnabled') === 'true'
+  })
+  const [notificationPermission, setNotificationPermission] = useState(() => {
+    if (typeof Notification === 'undefined') return 'default'
+    return Notification.permission
+  })
+
+  // Review toast state
+  interface ReviewToast {
+    id: string
+    agentId: string
+    agentName: string
+    timestamp: string
+  }
+  const [reviewToasts, setReviewToasts] = useState<ReviewToast[]>([])
+
+  // Dedupe tracking for notifications
+  const notifiedAgentsRef = useRef<Set<string>>(new Set())
+
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
   const shouldReconnectRef = useRef(true)
@@ -624,11 +646,109 @@ export default function App() {
         throw new Error(`HTTP ${response.status}`)
       }
 
+      // Remove toast when review state is updated
+      if (state !== 'pending') {
+        setReviewToasts(prev => prev.filter(toast => toast.agentId !== agentId))
+      }
+
       // The server will broadcast the update via WebSocket
     } catch (err) {
       console.error('Failed to update review state:', err)
     }
   }, [authToken])
+
+  // Request notification permission
+  const requestNotificationPermission = useCallback(async () => {
+    if (typeof Notification === 'undefined') {
+      alert('이 브라우저는 알림을 지원하지 않습니다.')
+      return
+    }
+
+    if (Notification.permission === 'granted') {
+      setNotificationEnabled(true)
+      localStorage.setItem('notificationEnabled', 'true')
+      return
+    }
+
+    try {
+      const permission = await Notification.requestPermission()
+      setNotificationPermission(permission)
+
+      if (permission === 'granted') {
+        setNotificationEnabled(true)
+        localStorage.setItem('notificationEnabled', 'true')
+      } else {
+        setNotificationEnabled(false)
+        localStorage.setItem('notificationEnabled', 'false')
+      }
+    } catch (err) {
+      console.error('Failed to request notification permission:', err)
+    }
+  }, [])
+
+  // Toggle notification
+  const toggleNotification = useCallback(() => {
+    if (!notificationEnabled) {
+      requestNotificationPermission()
+    } else {
+      setNotificationEnabled(false)
+      localStorage.setItem('notificationEnabled', 'false')
+    }
+  }, [notificationEnabled, requestNotificationPermission])
+
+  // Show browser notification
+  const showBrowserNotification = useCallback((agent: Agent) => {
+    if (!notificationEnabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') {
+      return
+    }
+
+    const notification = new Notification('검수 필요', {
+      body: `${agent.name} 작업이 완료된 것으로 보입니다.`,
+      icon: '/favicon.ico',
+      tag: agent.id, // Use tag to replace existing notification
+      requireInteraction: false,
+    })
+
+    notification.onclick = () => {
+      window.focus()
+      setSelectedAgentId(agent.id)
+      setActiveView('ops')
+      notification.close()
+    }
+
+    // Auto-close after 10 seconds
+    setTimeout(() => notification.close(), 10000)
+  }, [notificationEnabled, setSelectedAgentId])
+
+  // Show in-app toast
+  const showReviewToast = useCallback((agent: Agent) => {
+    const toast: ReviewToast = {
+      id: `${agent.id}-${agent.reviewCandidateAt}`,
+      agentId: agent.id,
+      agentName: agent.name,
+      timestamp: agent.reviewCandidateAt || new Date().toISOString(),
+    }
+
+    setReviewToasts(prev => {
+      // Remove existing toast for this agent
+      const filtered = prev.filter(t => t.agentId !== agent.id)
+      // Add new toast at the beginning
+      const updated = [toast, ...filtered]
+      // Keep only latest 3 toasts
+      return updated.slice(0, 3)
+    })
+  }, [])
+
+  // Handle review toast click
+  const handleReviewToastClick = useCallback((agentId: string) => {
+    setSelectedAgentId(agentId)
+    setActiveView('ops')
+  }, [])
+
+  // Remove review toast
+  const removeReviewToast = useCallback((toastId: string) => {
+    setReviewToasts(prev => prev.filter(t => t.id !== toastId))
+  }, [])
 
   // Cleanup heartbeat timers
   const stopHeartbeat = useCallback(() => {
@@ -747,6 +867,22 @@ export default function App() {
               ? current.agents.map(agent => agent.id === data.id ? data : agent)
               : [...current.agents, data],
           }))
+
+          // Check if agent needs review and send notifications
+          if (data.needsReview === true && data.reviewState === 'pending') {
+            const dedupeKey = `${data.id}-${data.reviewCandidateAt}`
+
+            // Only notify if we haven't already notified for this agent+timestamp
+            if (!notifiedAgentsRef.current.has(dedupeKey)) {
+              notifiedAgentsRef.current.add(dedupeKey)
+
+              // Show browser notification if enabled
+              showBrowserNotification(data)
+
+              // Always show in-app toast
+              showReviewToast(data)
+            }
+          }
           break
         case 'session_updated':
           setState(current => ({
@@ -1150,7 +1286,9 @@ export default function App() {
                   <p>터미널에서 Claude Code 작업을 시작하면 자동으로 감지됩니다.</p>
                 </div>
               ) : (
-                agentsWithStale.map(agent => {
+                <>
+                  <ReviewQueue agents={agentsWithStale} onSelectAgent={setSelectedAgentId} />
+                  {agentsWithStale.map(agent => {
                   const derived = getDerivedStatus(agent)
                   const derivedLabel = getDerivedStatusLabel(derived)
                   const sourceBadge = getSourceBadge(agent.source)
@@ -1183,7 +1321,8 @@ export default function App() {
                       <em className={agent.isStale ? 'stale-text' : ''}>{getStatusLabel(agent.status)}</em>
                     </button>
                   )
-                })
+                })}
+                </>
               )}
             </div>
           </section>
@@ -1465,6 +1604,44 @@ export default function App() {
             <button className="danger" onClick={logout}>로그아웃</button>
           </section>
 
+          <section className="settings-panel notification-settings-panel">
+            <div className="panel-head">
+              <div>
+                <p className="eyebrow">Notifications</p>
+                <h2>알림 설정</h2>
+              </div>
+            </div>
+            <div className="setting-item">
+              <span>검수 대기 알림</span>
+              <div className="notification-toggle-group">
+                <button
+                  type="button"
+                  onClick={toggleNotification}
+                  className={`notification-toggle ${notificationEnabled ? 'active' : ''}`}
+                >
+                  {notificationEnabled ? 'ON' : 'OFF'}
+                </button>
+                <span className="notification-status">
+                  {notificationPermission === 'granted' && notificationEnabled && '활성화됨'}
+                  {notificationPermission === 'granted' && !notificationEnabled && '비활성화됨'}
+                  {notificationPermission === 'denied' && '브라우저에서 차단됨'}
+                  {notificationPermission === 'default' && '권한 없음'}
+                </span>
+              </div>
+            </div>
+            <div className="notification-info">
+              <p>
+                에이전트가 검수 대기 상태(needsReview=true, reviewState=pending)가 되면
+                브라우저 알림과 앱 내 토스트를 표시합니다.
+              </p>
+              {notificationPermission === 'denied' && (
+                <p className="warning-text">
+                  브라우저 설정에서 알림 권한을 허용해 주세요.
+                </p>
+              )}
+            </div>
+          </section>
+
           <section className="settings-panel diagnostics-panel">
             <div className="panel-head">
               <div>
@@ -1564,6 +1741,34 @@ export default function App() {
       {showToast && (
         <div className="toast">
           클립보드에 복사되었습니다
+        </div>
+      )}
+
+      {/* Review toasts - top right */}
+      {reviewToasts.length > 0 && (
+        <div className="review-toast-container">
+          {reviewToasts.map(toast => (
+            <div
+              key={toast.id}
+              className="review-toast"
+              onClick={() => handleReviewToastClick(toast.agentId)}
+            >
+              <div className="review-toast-content">
+                <strong>검수 필요</strong>
+                <p>{toast.agentName} 작업이 완료된 것으로 보입니다.</p>
+              </div>
+              <button
+                type="button"
+                className="review-toast-close"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  removeReviewToast(toast.id)
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

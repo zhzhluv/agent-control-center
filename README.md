@@ -1,10 +1,12 @@
 # Agent Control Center
 
-Mac Mini에서 실행 중인 Claude Code 및 Codex 세션을 iPad에서 **읽기 전용**으로 모니터링하는 시스템.
+Mac Mini에서 실행 중인 Claude Code 및 Codex 세션을 iPad에서 모니터링하는 시스템.
 
-> **지원 세션**: `~/.claude/` (Claude Code) + `~/.codex/` (Codex) 읽기 전용 모니터링
+> **지원 세션**: `~/.claude/` (Claude Code) + `~/.codex/` (Codex) 모니터링
 
-> **읽기 전용 모니터링 전용** - 원격 명령 실행, 세션 시작/중지 기능은 포함되지 않음.
+> **읽기 전용 원칙**: Claude/Codex 원본 로그 및 세션 파일(`~/.claude/`, `~/.codex/`)에는 절대 write하지 않음. 앱 내부 상태(검수 상태, 알림 설정 등)는 서버 메모리 또는 localStorage에서 관리됨.
+
+> **모니터링 전용** - 원격 명령 실행, 세션 시작/중지 기능은 포함되지 않음.
 
 ## 주요 기능
 
@@ -15,6 +17,10 @@ Mac Mini에서 실행 중인 Claude Code 및 Codex 세션을 iPad에서 **읽기
 - **Runtime Stability** - WebSocket heartbeat, 자동 재연결, 지수 백오프
 - **Diagnostics Panel** - 서버 상태, 연결 통계, 오래된 세션 감지
 - **Reports API** - `.agents/` 폴더의 마크다운 보고서 열람
+- **브라우저 알림** - needsReview 에이전트 감지 시 Notification API 알림
+- **인앱 토스트** - 브라우저 권한 무관 실시간 인앱 알림
+- **검수 큐** - needsReview 에이전트 목록 및 상태별 분류
+- **reviewState 검수 처리** - pending/acknowledged/copied/dismissed 상태 관리
 - **보안 연결** - AUTH_TOKEN 인증 + Tailscale VPN 전제
 
 ## 운영 전제
@@ -100,13 +106,15 @@ cat /tmp/agent-control-center-token
 └── .agents/         # 작업 보고서
 ```
 
-## API (읽기 전용)
+## API
+
+> 모든 API는 Claude/Codex 원본 파일에 write하지 않음. POST 엔드포인트는 앱 내부 상태만 변경.
 
 ### WebSocket 이벤트
 
 ```javascript
 // 연결
-const ws = new WebSocket('ws://localhost:9876?token=YOUR_TOKEN')
+const ws = new WebSocket('ws://localhost:9876?token=<AUTH_TOKEN>')
 
 // 서버에서 받는 이벤트
 // - init: 초기 상태
@@ -132,25 +140,32 @@ const ws = new WebSocket('ws://localhost:9876?token=YOUR_TOKEN')
 curl http://localhost:9876/api/health
 
 # 상태 확인
-curl -H "Authorization: Bearer TOKEN" http://localhost:9876/api/status
+curl -H "Authorization: Bearer <AUTH_TOKEN>" http://localhost:9876/api/status
 
 # 메트릭스
-curl -H "Authorization: Bearer TOKEN" http://localhost:9876/api/metrics
+curl -H "Authorization: Bearer <AUTH_TOKEN>" http://localhost:9876/api/metrics
 
 # 진단 정보
-curl -H "Authorization: Bearer TOKEN" http://localhost:9876/api/diagnostics
+curl -H "Authorization: Bearer <AUTH_TOKEN>" http://localhost:9876/api/diagnostics
 
 # 에이전트 목록
-curl -H "Authorization: Bearer TOKEN" http://localhost:9876/api/agents
+curl -H "Authorization: Bearer <AUTH_TOKEN>" http://localhost:9876/api/agents
 
 # 세션 목록
-curl -H "Authorization: Bearer TOKEN" http://localhost:9876/api/sessions
+curl -H "Authorization: Bearer <AUTH_TOKEN>" http://localhost:9876/api/sessions
 
 # 보고서 목록
-curl -H "Authorization: Bearer TOKEN" http://localhost:9876/api/reports
+curl -H "Authorization: Bearer <AUTH_TOKEN>" http://localhost:9876/api/reports
 
 # 보고서 내용
-curl -H "Authorization: Bearer TOKEN" http://localhost:9876/api/reports/ops-runtime-stability/agent-d-qa-report.md
+curl -H "Authorization: Bearer <AUTH_TOKEN>" http://localhost:9876/api/reports/ops-runtime-stability/agent-d-qa-report.md
+
+# 검수 상태 변경 (앱 내부 상태)
+curl -X POST http://localhost:9876/api/agents/<AGENT_ID>/review-state \
+  -H "Authorization: Bearer <AUTH_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"state": "acknowledged"}'
+# state: pending | acknowledged | copied | dismissed
 ```
 
 ## 테스트
