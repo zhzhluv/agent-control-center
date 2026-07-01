@@ -1660,6 +1660,45 @@ button.danger {
   background: rgba(48, 195, 168, 0.08);
 }
 
+/* Review State Styles for Staff Board */
+.staff-row.review-pending {
+  border-color: rgba(48, 195, 168, 0.5);
+  background: rgba(48, 195, 168, 0.08);
+}
+
+.staff-row.review-acknowledged,
+.staff-row.review-copied {
+  border-color: rgba(48, 195, 168, 0.3);
+  background: rgba(48, 195, 168, 0.04);
+  opacity: 0.85;
+}
+
+.staff-row.review-dismissed {
+  opacity: 0.5;
+  border-color: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Profile dot review states */
+.profile-dot.review-pending {
+  background: #30c3a8;
+  box-shadow: 0 0 16px rgba(48, 195, 168, 0.9);
+  animation: pulse-review 2s infinite;
+}
+
+.profile-dot.review-acknowledged,
+.profile-dot.review-copied {
+  background: #30c3a8;
+  box-shadow: 0 0 8px rgba(48, 195, 168, 0.5);
+  opacity: 0.7;
+}
+
+.profile-dot.review-dismissed {
+  background: #888;
+  box-shadow: none;
+  opacity: 0.4;
+}
+
 /* Review Banner */
 .review-banner {
   padding: 14px;
@@ -1673,6 +1712,7 @@ button.danger {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
 .review-icon {
@@ -1702,6 +1742,63 @@ button.danger {
   color: var(--text-primary);
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* Review Action Buttons */
+.review-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-btn {
+  flex: 1;
+  min-width: 100px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.review-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.review-btn.acknowledged.active {
+  background: rgba(48, 195, 168, 0.15);
+  border-color: rgba(48, 195, 168, 0.5);
+  color: #7fdccf;
+}
+
+.review-btn.copied.active {
+  background: rgba(48, 195, 168, 0.15);
+  border-color: rgba(48, 195, 168, 0.5);
+  color: #7fdccf;
+}
+
+.review-btn.dismissed.active {
+  background: rgba(150, 150, 150, 0.15);
+  border-color: rgba(150, 150, 150, 0.5);
+  color: #999;
+}
+
+/* Mobile responsiveness for review buttons */
+@media (max-width: 720px) {
+  .review-actions {
+    flex-direction: column;
+  }
+
+  .review-btn {
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 /* Next Instruction Area */

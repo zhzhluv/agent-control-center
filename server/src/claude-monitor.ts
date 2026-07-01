@@ -38,6 +38,7 @@ export interface AgentInfo {
   needsReview: boolean;                // 검수 필요 후보 여부
   reviewCandidateAt?: string;          // ISO 타임스탬프
   reviewReason?: string;               // 후보 판단 이유
+  reviewState?: 'pending' | 'acknowledged' | 'copied' | 'dismissed';  // 운영자 처리 상태
 }
 
 export interface ProjectInfo {
@@ -303,6 +304,7 @@ export class ClaudeMonitor extends EventEmitter {
           needsReview: shouldClearReview ? false : (existingAgent?.needsReview || false),
           reviewCandidateAt: shouldClearReview ? undefined : existingAgent?.reviewCandidateAt,
           reviewReason: shouldClearReview ? undefined : existingAgent?.reviewReason,
+          reviewState: shouldClearReview ? undefined : existingAgent?.reviewState,
         };
 
         this.agents.set(agentId, agent);
@@ -399,6 +401,7 @@ export class ClaudeMonitor extends EventEmitter {
             needsReview: shouldClearMainReview ? false : (existingMainAgent?.needsReview || false),
             reviewCandidateAt: shouldClearMainReview ? undefined : existingMainAgent?.reviewCandidateAt,
             reviewReason: shouldClearMainReview ? undefined : existingMainAgent?.reviewReason,
+            reviewState: shouldClearMainReview ? undefined : existingMainAgent?.reviewState,
           };
 
           this.agents.set(mainAgentId, mainAgent);
@@ -529,11 +532,13 @@ export class ClaudeMonitor extends EventEmitter {
           agent.needsReview = true;
           agent.reviewCandidateAt = new Date().toISOString();
           agent.reviewReason = reviewCheck.reason;
+          agent.reviewState = 'pending';  // needsReview가 true로 설정되면 reviewState를 'pending'으로 초기화
           reviewStatusChanged = true;
         } else if (!reviewCheck.needsReview && agent.needsReview) {
           agent.needsReview = false;
           agent.reviewCandidateAt = undefined;
           agent.reviewReason = undefined;
+          agent.reviewState = undefined;  // needsReview가 false로 초기화되면 reviewState도 초기화
           reviewStatusChanged = true;
         }
       }
@@ -817,5 +822,27 @@ export class ClaudeMonitor extends EventEmitter {
 
   getSessions(): SessionInfo[] {
     return Array.from(this.sessions.values());
+  }
+
+  /**
+   * Update review state for an agent
+   * This is called by the REST API when an operator changes the review state
+   */
+  updateReviewState(agentId: string, reviewState: 'pending' | 'acknowledged' | 'copied' | 'dismissed'): boolean {
+    const agent = this.agents.get(agentId);
+
+    if (!agent) {
+      return false;
+    }
+
+    // Only update if the agent is in needsReview state
+    if (!agent.needsReview) {
+      return false;
+    }
+
+    agent.reviewState = reviewState;
+    this.emit('agent_updated', agent);
+
+    return true;
   }
 }

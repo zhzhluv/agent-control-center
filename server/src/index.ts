@@ -311,6 +311,41 @@ app.get('/api/metrics', auth.verify, (req, res) => {
   res.json(getMergedStatus().metrics);
 });
 
+// Update review state for an agent
+app.post('/api/agents/:id/review-state', auth.verify, (req, res) => {
+  const agentId = req.params.id;
+  const { state } = req.body;
+
+  // Validate state
+  const validStates = ['pending', 'acknowledged', 'copied', 'dismissed'];
+  if (!state || !validStates.includes(state)) {
+    return res.status(400).json({
+      error: 'Invalid state',
+      message: 'State must be one of: pending, acknowledged, copied, dismissed'
+    });
+  }
+
+  // Determine if this is a Claude or Codex agent
+  const isCodexAgent = agentId.startsWith('codex:');
+  const monitor = isCodexAgent ? codexMonitor : claudeMonitor;
+
+  // Update the review state
+  const success = monitor.updateReviewState(agentId, state);
+
+  if (!success) {
+    return res.status(404).json({
+      error: 'Agent not found or not in review state',
+      message: 'Cannot update review state for this agent'
+    });
+  }
+
+  res.json({
+    success: true,
+    agentId,
+    reviewState: state
+  });
+});
+
 // Helper: count .md files in .agents directory
 function countReports(): number {
   try {

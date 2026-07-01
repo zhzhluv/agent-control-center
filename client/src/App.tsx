@@ -28,6 +28,7 @@ interface Agent {
   needsReview?: boolean
   reviewCandidateAt?: string
   reviewReason?: string
+  reviewState?: 'pending' | 'acknowledged' | 'copied' | 'dismissed'
 }
 
 interface Session {
@@ -582,16 +583,52 @@ export default function App() {
     }
   }, [authToken])
 
-  const copyNextInstruction = useCallback(() => {
+  const copyNextInstruction = useCallback(async () => {
     if (!nextInstruction.trim()) return
 
-    navigator.clipboard.writeText(nextInstruction).then(() => {
+    try {
+      await navigator.clipboard.writeText(nextInstruction)
+
+      // Update review state to 'copied' when copying
+      if (selectedAgent?.needsReview && selectedAgent?.id) {
+        await updateReviewState(selectedAgent.id, 'copied')
+      }
+
       setShowToast(true)
       setTimeout(() => setShowToast(false), 2000)
-    }).catch(err => {
+    } catch (err) {
       console.error('Failed to copy:', err)
-    })
-  }, [nextInstruction])
+    }
+  }, [nextInstruction, selectedAgent])
+
+  const updateReviewState = useCallback(async (agentId: string, state: 'pending' | 'acknowledged' | 'copied' | 'dismissed') => {
+    if (!authToken) return
+
+    try {
+      const protocol = window.location.protocol
+      const host = import.meta.env.DEV
+        ? `${window.location.hostname}:9876`
+        : window.location.host
+      const url = `${protocol}//${host}/api/agents/${encodeURIComponent(agentId)}/review-state`
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ state }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      // The server will broadcast the update via WebSocket
+    } catch (err) {
+      console.error('Failed to update review state:', err)
+    }
+  }, [authToken])
 
   // Cleanup heartbeat timers
   const stopHeartbeat = useCallback(() => {
@@ -961,6 +998,29 @@ export default function App() {
                         <p>{selectedAgent.reviewReason || '이 에이전트가 작업 검수를 요청했습니다.'}</p>
                       </div>
                     </div>
+                    <div className="review-actions">
+                      <button
+                        type="button"
+                        className={`review-btn acknowledged ${selectedAgent.reviewState === 'acknowledged' ? 'active' : ''}`}
+                        onClick={() => updateReviewState(selectedAgent.id, 'acknowledged')}
+                      >
+                        확인함
+                      </button>
+                      <button
+                        type="button"
+                        className={`review-btn copied ${selectedAgent.reviewState === 'copied' ? 'active' : ''}`}
+                        onClick={() => updateReviewState(selectedAgent.id, 'copied')}
+                      >
+                        복사 후 대기
+                      </button>
+                      <button
+                        type="button"
+                        className={`review-btn dismissed ${selectedAgent.reviewState === 'dismissed' ? 'active' : ''}`}
+                        onClick={() => updateReviewState(selectedAgent.id, 'dismissed')}
+                      >
+                        숨기기
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1094,14 +1154,21 @@ export default function App() {
                   const derived = getDerivedStatus(agent)
                   const derivedLabel = getDerivedStatusLabel(derived)
                   const sourceBadge = getSourceBadge(agent.source)
+
+                  // Determine review state class
+                  let reviewStateClass = ''
+                  if (agent.needsReview && agent.reviewState) {
+                    reviewStateClass = `review-${agent.reviewState}`
+                  }
+
                   return (
                     <button
                       type="button"
                       key={agent.id}
-                      className={`staff-row ${agent.status} ${derived ? `derived-${derived}` : ''} ${agent.isStale ? 'stale' : ''} ${selectedAgent?.id === agent.id ? 'selected' : ''}`}
+                      className={`staff-row ${agent.status} ${derived ? `derived-${derived}` : ''} ${agent.isStale ? 'stale' : ''} ${reviewStateClass} ${selectedAgent?.id === agent.id ? 'selected' : ''}`}
                       onClick={() => setSelectedAgentId(agent.id)}
                     >
-                      <span className={`profile-dot ${agent.status} ${derived ? `derived-${derived}` : ''} ${agent.isStale ? 'stale' : ''}`} />
+                      <span className={`profile-dot ${agent.status} ${derived ? `derived-${derived}` : ''} ${agent.isStale ? 'stale' : ''} ${reviewStateClass}`} />
                       <span>
                         <strong>
                           {agent.name}

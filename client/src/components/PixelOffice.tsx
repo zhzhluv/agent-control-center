@@ -26,6 +26,7 @@ export interface Agent {
   needsReview?: boolean
   reviewCandidateAt?: string
   reviewReason?: string
+  reviewState?: 'pending' | 'acknowledged' | 'copied' | 'dismissed'
 }
 
 interface PixelOfficeProps {
@@ -349,15 +350,42 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     const bounce = Math.sin(frame * 0.1 + x) * 2
     const agentY = y + bounce
 
-    // 상태 색상 (needsReview > stale > status)
-    const statusColor = agent.needsReview ? '#30c3a8'  // Green for needs review
-      : agent.isStale ? '#6a6a7a'
-      : agent.status === 'working' ? COLORS.working
-      : agent.status === 'idle' ? COLORS.idle
-      : COLORS.waiting
+    // 상태 색상 (reviewState > needsReview > stale > status)
+    let statusColor: string
+    let opacity = 1.0
 
-    // Stale 상태면 전체 반투명
-    const opacity = agent.isStale ? 0.4 : 1.0
+    if (agent.needsReview && agent.reviewState) {
+      // Review state colors
+      switch (agent.reviewState) {
+        case 'pending':
+          statusColor = '#30c3a8'  // Strong green for pending review
+          opacity = 1.0
+          break
+        case 'acknowledged':
+        case 'copied':
+          statusColor = '#30c3a8'  // Light green for acknowledged/copied
+          opacity = 0.7
+          break
+        case 'dismissed':
+          statusColor = '#888888'  // Gray for dismissed
+          opacity = 0.5
+          break
+        default:
+          statusColor = '#30c3a8'
+      }
+    } else if (agent.needsReview) {
+      statusColor = '#30c3a8'  // Default green for needs review
+      opacity = 1.0
+    } else if (agent.isStale) {
+      statusColor = '#6a6a7a'
+      opacity = 0.4
+    } else {
+      statusColor = agent.status === 'working' ? COLORS.working
+        : agent.status === 'idle' ? COLORS.idle
+        : COLORS.waiting
+      opacity = 1.0
+    }
+
     ctx.globalAlpha = opacity
 
     // 그림자
@@ -401,8 +429,28 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     ctx.arc(x, agentY - 22, 4, 0, Math.PI * 2)
     ctx.fill()
 
-    // 상태 점 발광 효과 (needs review일 때 더 강하게)
-    if (agent.needsReview) {
+    // 상태 점 발광 효과 (review state에 따라 조절)
+    if (agent.needsReview && agent.reviewState === 'pending') {
+      // Strong glow for pending review
+      ctx.fillStyle = statusColor + '88'
+      ctx.beginPath()
+      ctx.arc(x, agentY - 22, 10, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = statusColor + '44'
+      ctx.beginPath()
+      ctx.arc(x, agentY - 22, 14, 0, Math.PI * 2)
+      ctx.fill()
+    } else if (agent.needsReview && (agent.reviewState === 'acknowledged' || agent.reviewState === 'copied')) {
+      // Mild glow for acknowledged/copied
+      ctx.fillStyle = statusColor + '55'
+      ctx.beginPath()
+      ctx.arc(x, agentY - 22, 8, 0, Math.PI * 2)
+      ctx.fill()
+    } else if (agent.needsReview && agent.reviewState === 'dismissed') {
+      // No glow for dismissed
+      // Just the dot itself
+    } else if (agent.needsReview) {
+      // Default glow for needs review without state
       ctx.fillStyle = statusColor + '88'
       ctx.beginPath()
       ctx.arc(x, agentY - 22, 10, 0, Math.PI * 2)
@@ -412,6 +460,7 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
       ctx.arc(x, agentY - 22, 14, 0, Math.PI * 2)
       ctx.fill()
     } else {
+      // Normal glow for regular status
       ctx.fillStyle = statusColor + '44'
       ctx.beginPath()
       ctx.arc(x, agentY - 22, 7, 0, Math.PI * 2)
@@ -641,7 +690,12 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
             </span>
           </div>
           {hoveredAgent.needsReview && (
-            <div className="tooltip-review-badge">검수 필요</div>
+            <div className={`tooltip-review-badge ${hoveredAgent.reviewState ? `review-${hoveredAgent.reviewState}` : ''}`}>
+              {hoveredAgent.reviewState === 'acknowledged' ? '검수 확인함' :
+               hoveredAgent.reviewState === 'copied' ? '복사 후 대기' :
+               hoveredAgent.reviewState === 'dismissed' ? '숨김 처리' :
+               '검수 필요'}
+            </div>
           )}
           {hoveredAgent.isStale && (
             <div className="tooltip-stale-badge">Stale - No activity for 5+ min</div>

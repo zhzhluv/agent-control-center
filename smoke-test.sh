@@ -338,14 +338,90 @@ check_status 403 "$STATUS"
 echo ""
 
 #################################################################
-# Section 4: WebSocket Tests
+# Section 4: Review State API Tests
 #################################################################
 
-echo -e "${CYAN}═══ Section 4: WebSocket Tests ═══${NC}"
+echo -e "${CYAN}═══ Section 4: Review State API Tests ═══${NC}"
 echo ""
 
-# Test 4.1: WebSocket connection
-echo "4.1 WebSocket Connection Test"
+# Test 4.1: No auth header
+echo "4.1 POST /api/agents/:id/review-state (no auth → 401)"
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"state":"acknowledged"}' \
+  "$BASE_URL/api/agents/test-agent/review-state")
+check_status 401 "$STATUS"
+echo ""
+
+# Test 4.2: Invalid token
+echo "4.2 POST /api/agents/:id/review-state (invalid token → 401)"
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer invalid-token-12345" \
+  -H "Content-Type: application/json" \
+  -d '{"state":"acknowledged"}' \
+  "$BASE_URL/api/agents/test-agent/review-state")
+check_status 401 "$STATUS"
+echo ""
+
+# Test 4.3: Invalid state value
+echo "4.3 POST /api/agents/:id/review-state (invalid state → 400)"
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"state":"invalid-state-value"}' \
+  "$BASE_URL/api/agents/test-agent/review-state")
+check_status 400 "$STATUS"
+echo ""
+
+# Test 4.4: Non-existent agent
+echo "4.4 POST /api/agents/:id/review-state (non-existent agent → 404)"
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"state":"acknowledged"}' \
+  "$BASE_URL/api/agents/non-existent-agent-id-12345/review-state")
+check_status 404 "$STATUS"
+echo ""
+
+# Test 4.5: (Optional) Actual state change if needsReview=true agent exists
+echo "4.5 POST /api/agents/:id/review-state (dynamic: needsReview=true agent)"
+REVIEW_AGENT=$(node -e "
+  const fs = require('fs');
+  try {
+    const data = JSON.parse(fs.readFileSync('$TEMP_DIR/agents.json', 'utf8'));
+    const agent = data.find(a => a.needsReview === true);
+    if (agent) console.log(agent.id);
+  } catch (e) {}
+" 2>/dev/null)
+
+if [ -n "$REVIEW_AGENT" ]; then
+  STATUS=$(curl -s -o "$TEMP_DIR/review-state.json" -w "%{http_code}" \
+    -X POST \
+    -H "Authorization: Bearer $AUTH_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"state":"acknowledged"}' \
+    "$BASE_URL/api/agents/$REVIEW_AGENT/review-state")
+  if check_status 200 "$STATUS"; then
+    echo -e "   ${BLUE}Info${NC}: Agent '$REVIEW_AGENT' state changed to 'acknowledged'"
+  fi
+else
+  skip_test "검증 시점에 needsReview=true 에이전트 없음 (동적 상태)"
+fi
+echo ""
+
+#################################################################
+# Section 5: WebSocket Tests
+#################################################################
+
+echo -e "${CYAN}═══ Section 5: WebSocket Tests ═══${NC}"
+echo ""
+
+# Test 5.1: WebSocket connection
+echo "5.1 WebSocket Connection Test"
 if command -v node &> /dev/null; then
   # Run WebSocket test from project root to access node_modules/ws
   OUTPUT=$(cd "$PROJECT_ROOT" && node -e "
@@ -435,8 +511,8 @@ else
 fi
 echo ""
 
-# Test 4.2: WebSocket auth rejection
-echo "4.2 WebSocket Auth Rejection Test"
+# Test 5.2: WebSocket auth rejection
+echo "5.2 WebSocket Auth Rejection Test"
 if command -v node &> /dev/null; then
   # Note: WebSocket 'open' event fires first, then server checks token and closes with 4001
   OUTPUT=$(cd "$PROJECT_ROOT" && node -e "

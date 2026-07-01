@@ -233,6 +233,21 @@
   border: 1px solid rgba(48, 195, 168, 0.3);
 }
 
+.tooltip-review-badge.review-acknowledged,
+.tooltip-review-badge.review-copied {
+  background: rgba(48, 195, 168, 0.1);
+  color: #7fdccf;
+  opacity: 0.8;
+  border: 1px solid rgba(48, 195, 168, 0.2);
+}
+
+.tooltip-review-badge.review-dismissed {
+  background: rgba(150, 150, 150, 0.1);
+  color: #999;
+  opacity: 0.7;
+  border: 1px solid rgba(150, 150, 150, 0.2);
+}
+
 /* Animation */
 @keyframes fadeIn {
   from {

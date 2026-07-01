@@ -263,6 +263,7 @@ export class CodexMonitor extends EventEmitter {
         needsReview: shouldClearReview ? false : (existingAgent?.needsReview || false),
         reviewCandidateAt: shouldClearReview ? undefined : existingAgent?.reviewCandidateAt,
         reviewReason: shouldClearReview ? undefined : existingAgent?.reviewReason,
+        reviewState: shouldClearReview ? undefined : existingAgent?.reviewState,
       };
 
       this.agents.set(mainAgentId, mainAgent);
@@ -536,11 +537,13 @@ export class CodexMonitor extends EventEmitter {
           agent.needsReview = true;
           agent.reviewCandidateAt = new Date().toISOString();
           agent.reviewReason = reviewCheck.reason;
+          agent.reviewState = 'pending';  // needsReview가 true로 설정되면 reviewState를 'pending'으로 초기화
           reviewStatusChanged = true;
         } else if (!reviewCheck.needsReview && agent.needsReview) {
           agent.needsReview = false;
           agent.reviewCandidateAt = undefined;
           agent.reviewReason = undefined;
+          agent.reviewState = undefined;  // needsReview가 false로 초기화되면 reviewState도 초기화
           reviewStatusChanged = true;
         }
       }
@@ -599,5 +602,27 @@ export class CodexMonitor extends EventEmitter {
 
   getSessions(): SessionInfo[] {
     return Array.from(this.sessions.values());
+  }
+
+  /**
+   * Update review state for an agent
+   * This is called by the REST API when an operator changes the review state
+   */
+  updateReviewState(agentId: string, reviewState: 'pending' | 'acknowledged' | 'copied' | 'dismissed'): boolean {
+    const agent = this.agents.get(agentId);
+
+    if (!agent) {
+      return false;
+    }
+
+    // Only update if the agent is in needsReview state
+    if (!agent.needsReview) {
+      return false;
+    }
+
+    agent.reviewState = reviewState;
+    this.emit('agent_updated', agent);
+
+    return true;
   }
 }
