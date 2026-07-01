@@ -34,6 +34,9 @@ export interface AgentInfo {
   projectPath: string;
   sessionId: string;
   source: 'claude' | 'codex';          // Source provider
+  needsReview: boolean;                // 검수 필요 후보 여부
+  reviewCandidateAt?: string;          // ISO 타임스탬프
+  reviewReason?: string;               // 후보 판단 이유
 }
 
 export interface ProjectInfo {
@@ -74,6 +77,9 @@ export class ClaudeMonitor extends EventEmitter {
 
   // File scanning window for initial discovery (seconds)
   private readonly SCAN_WINDOW_SECONDS = 600;         // 10 minutes
+
+  // Review candidate detection threshold (seconds)
+  private readonly REVIEW_CANDIDATE_THRESHOLD_SECONDS = 30; // 30s with no new activity
 
   constructor() {
     super();
@@ -185,7 +191,7 @@ export class ClaudeMonitor extends EventEmitter {
             cacheWriteTokens += data.message.usage.cache_creation_input_tokens || 0;
           }
 
-          // 사용자 메시지를 현재 작업으로 사용
+          // 사용자 메시지를 현재 작업으로 사용 + recentActivity에 기록
           if (data.message?.content && data.type === 'user') {
             const rawContent = typeof data.message.content === 'string'
               ? data.message.content
@@ -194,6 +200,12 @@ export class ClaudeMonitor extends EventEmitter {
               const content = redactSecrets(rawContent);
               lastMessageFull = content;
               lastMessage = content.length > 80 ? content.slice(0, 80) + '...' : content;
+              // 사용자 메시지를 활동 로그에 기록 (needsReview 해제 조건용)
+              recentActivity.push({
+                timestamp: new Date(data.timestamp || Date.now()),
+                type: 'message',
+                summary: `💬 User: ${content.slice(0, 50)}${content.length > 50 ? '...' : ''}`,
+              });
             }
           }
 
@@ -247,6 +259,26 @@ export class ClaudeMonitor extends EventEmitter {
         const agentType: 'main' | 'sub' = parentSessionId ? 'sub' : 'main';
 
         // 에이전트 정보 업데이트
+        const existingAgent = this.agents.get(agentId);
+
+        // needsReview 해제 조건 확인
+        let shouldClearReview = false;
+        if (existingAgent?.needsReview && existingAgent.reviewCandidateAt) {
+          const reviewTime = new Date(existingAgent.reviewCandidateAt).getTime();
+          // 조건 1: 파일 mtime이 reviewCandidateAt보다 늦으면 해제
+          if (stat.mtime.getTime() > reviewTime) {
+            shouldClearReview = true;
+          }
+          // 조건 2: reviewCandidateAt 이후 새 message/tool_use가 있으면 해제
+          const hasNewActivity = trimmedActivity.some(activity =>
+            (activity.type === 'message' || activity.type === 'tool_use') &&
+            activity.timestamp.getTime() > reviewTime
+          );
+          if (hasNewActivity) {
+            shouldClearReview = true;
+          }
+        }
+
         const agent: AgentInfo = {
           id: agentId,
           name: this.getAgentName(agentId),
@@ -267,6 +299,9 @@ export class ClaudeMonitor extends EventEmitter {
           projectPath: cwd || this.pathFromProjectName(projectName),
           sessionId: sessionId,
           source: 'claude',
+          needsReview: shouldClearReview ? false : (existingAgent?.needsReview || false),
+          reviewCandidateAt: shouldClearReview ? undefined : existingAgent?.reviewCandidateAt,
+          reviewReason: shouldClearReview ? undefined : existingAgent?.reviewReason,
         };
 
         this.agents.set(agentId, agent);
@@ -316,6 +351,30 @@ export class ClaudeMonitor extends EventEmitter {
           const agentStatus: 'idle' | 'working' | 'waiting' =
             state === 'active' ? 'working' : 'idle';
 
+          const existingMainAgent = this.agents.get(mainAgentId);
+
+          // needsReview 해제 조건 확인
+          let shouldClearMainReview = false;
+          if (existingMainAgent?.needsReview && existingMainAgent.reviewCandidateAt) {
+            const reviewTime = new Date(existingMainAgent.reviewCandidateAt).getTime();
+            // 조건 1: 파일 mtime이 reviewCandidateAt보다 늦으면 해제
+            if (stat.mtime.getTime() > reviewTime) {
+              shouldClearMainReview = true;
+            }
+            // 조건 2: reviewCandidateAt 이후 새 message/tool_use가 있으면 해제
+            const hasNewMainActivity = trimmedActivity.some(activity =>
+              (activity.type === 'message' || activity.type === 'tool_use') &&
+              activity.timestamp.getTime() > reviewTime
+            );
+            if (hasNewMainActivity) {
+              shouldClearMainReview = true;
+            }
+          }
+          // 조건 3: agent가 working으로 재진입하면 해제
+          if (agentStatus === 'working' && existingMainAgent?.needsReview) {
+            shouldClearMainReview = true;
+          }
+
           const mainAgent: AgentInfo = {
             id: mainAgentId,
             name: this.getAgentName(mainAgentId),
@@ -336,6 +395,9 @@ export class ClaudeMonitor extends EventEmitter {
             projectPath: actualProjectPath,
             sessionId: sessionId,
             source: 'claude',
+            needsReview: shouldClearMainReview ? false : (existingMainAgent?.needsReview || false),
+            reviewCandidateAt: shouldClearMainReview ? undefined : existingMainAgent?.reviewCandidateAt,
+            reviewReason: shouldClearMainReview ? undefined : existingMainAgent?.reviewReason,
           };
 
           this.agents.set(mainAgentId, mainAgent);
@@ -435,11 +497,48 @@ export class ClaudeMonitor extends EventEmitter {
     const activeThreshold = this.ACTIVE_THRESHOLD_SECONDS * 1000;
     const idleThreshold = this.IDLE_THRESHOLD_SECONDS * 1000;
 
-    // Update agent status
+    // Update agent status and check for review candidates
     this.agents.forEach((agent, id) => {
       const age = now - agent.lastActivity.getTime();
-      if (age > activeThreshold) {
+      let statusChanged = false;
+      let reviewStatusChanged = false;
+
+      // Update working/idle status
+      if (age > activeThreshold && agent.status === 'working') {
         agent.status = 'idle';
+        statusChanged = true;
+      } else if (age <= activeThreshold && agent.status === 'idle') {
+        agent.status = 'working';
+        statusChanged = true;
+        // If agent becomes active again, clear review candidate status
+        if (agent.needsReview) {
+          agent.needsReview = false;
+          agent.reviewCandidateAt = undefined;
+          agent.reviewReason = undefined;
+          reviewStatusChanged = true;
+        }
+      }
+
+      // Check if agent needs review (only if idle)
+      if (agent.status === 'idle') {
+        const reviewCheck = this.checkNeedsReview(agent, now);
+
+        // If review status changed, update the agent
+        if (reviewCheck.needsReview && !agent.needsReview) {
+          agent.needsReview = true;
+          agent.reviewCandidateAt = new Date().toISOString();
+          agent.reviewReason = reviewCheck.reason;
+          reviewStatusChanged = true;
+        } else if (!reviewCheck.needsReview && agent.needsReview) {
+          agent.needsReview = false;
+          agent.reviewCandidateAt = undefined;
+          agent.reviewReason = undefined;
+          reviewStatusChanged = true;
+        }
+      }
+
+      // Emit update if anything changed
+      if (statusChanged || reviewStatusChanged) {
         this.emit('agent_updated', agent);
       }
     });
@@ -621,6 +720,75 @@ export class ClaudeMonitor extends EventEmitter {
     } catch {
       return url.slice(0, 30);
     }
+  }
+
+  /**
+   * Check if an agent is a candidate for review based on conservative heuristics:
+   * - Last tool_result was successful (is_error: false)
+   * - No tool_use after the last successful result
+   * - No new user messages after the result
+   * - At least REVIEW_CANDIDATE_THRESHOLD_SECONDS have passed since last activity
+   * - No recent error results
+   */
+  private checkNeedsReview(agent: AgentInfo, now: number): { needsReview: boolean; reason?: string } {
+    // Must be idle (not actively working)
+    if (agent.status !== 'idle') {
+      return { needsReview: false };
+    }
+
+    // Must have some recent activity
+    if (agent.recentActivity.length === 0) {
+      return { needsReview: false };
+    }
+
+    // Check if enough time has passed since last activity
+    const ageSeconds = (now - agent.lastActivity.getTime()) / 1000;
+    if (ageSeconds < this.REVIEW_CANDIDATE_THRESHOLD_SECONDS) {
+      return { needsReview: false };
+    }
+
+    // Check for any recent errors (disqualifies from review)
+    const hasRecentError = agent.recentActivity.some(activity => activity.is_error === true);
+    if (hasRecentError) {
+      return { needsReview: false };
+    }
+
+    // Find the last tool_result
+    let lastResultIndex = -1;
+    for (let i = agent.recentActivity.length - 1; i >= 0; i--) {
+      if (agent.recentActivity[i].type === 'result') {
+        lastResultIndex = i;
+        break;
+      }
+    }
+
+    // No tool results found
+    if (lastResultIndex === -1) {
+      return { needsReview: false };
+    }
+
+    const lastResult = agent.recentActivity[lastResultIndex];
+
+    // Last result must be successful
+    if (lastResult.is_error === true) {
+      return { needsReview: false };
+    }
+
+    // Check if there are any tool_use or message activities after the last result
+    const activitiesAfterResult = agent.recentActivity.slice(lastResultIndex + 1);
+    const hasActivityAfterResult = activitiesAfterResult.some(
+      activity => activity.type === 'tool_use' || activity.type === 'message'
+    );
+
+    if (hasActivityAfterResult) {
+      return { needsReview: false };
+    }
+
+    // All conditions met - this is a review candidate
+    return {
+      needsReview: true,
+      reason: `Successful operation completed, no activity for ${Math.floor(ageSeconds)}s`
+    };
   }
 
   getStatus() {

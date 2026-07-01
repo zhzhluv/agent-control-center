@@ -1636,3 +1636,165 @@ button.danger {
   color: var(--text-secondary) !important;
   opacity: 0.7;
 }
+
+/* Needs Review status styles */
+.profile-dot.derived-needs_review {
+  background: #30c3a8;
+  box-shadow: 0 0 16px rgba(48, 195, 168, 0.9);
+  animation: pulse-review 2s infinite;
+}
+
+@keyframes pulse-review {
+  0%, 100% { box-shadow: 0 0 12px rgba(48, 195, 168, 0.7); }
+  50% { box-shadow: 0 0 24px rgba(48, 195, 168, 1); }
+}
+
+.status-pill.derived.needs_review {
+  background: rgba(48, 195, 168, 0.18);
+  color: #7fdccf;
+  font-weight: 700;
+}
+
+.staff-row.derived-needs_review {
+  border-color: rgba(48, 195, 168, 0.5);
+  background: rgba(48, 195, 168, 0.08);
+}
+
+/* Review Banner */
+.review-banner {
+  padding: 14px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(48, 195, 168, 0.15), rgba(48, 195, 168, 0.08));
+  border: 1px solid rgba(48, 195, 168, 0.3);
+}
+
+.review-banner-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.review-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(48, 195, 168, 0.2);
+  color: #7fdccf;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.review-banner-header strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #7fdccf;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.review-banner-header p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Next Instruction Area */
+.next-instruction-area {
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(48, 195, 168, 0.05);
+  border: 1px solid rgba(48, 195, 168, 0.2);
+}
+
+.next-instruction-area h3 {
+  margin: 0 0 10px;
+  color: #7fdccf;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.next-instruction-input {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  transition: all 0.15s;
+}
+
+.next-instruction-input:focus {
+  outline: none;
+  border-color: rgba(48, 195, 168, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.next-instruction-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.copy-instruction-btn {
+  width: 100%;
+  min-height: 36px;
+  padding: 9px 14px;
+  border: 1px solid rgba(48, 195, 168, 0.3);
+  border-radius: 8px;
+  background: rgba(48, 195, 168, 0.15);
+  color: #7fdccf;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.copy-instruction-btn:hover:not(:disabled) {
+  background: rgba(48, 195, 168, 0.25);
+  border-color: rgba(48, 195, 168, 0.5);
+}
+
+.copy-instruction-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Toast Notification */
+.toast {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 12px;
+  background: rgba(48, 195, 168, 0.95);
+  color: #071212;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  animation: toast-slide-up 0.3s ease-out;
+}
+
+@keyframes toast-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}

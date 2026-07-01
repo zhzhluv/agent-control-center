@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import { EventEmitter } from 'events';
 import readline from 'readline';
-import type { AgentInfo, SessionInfo, SessionState } from './claude-monitor.js';
+import type { AgentInfo, SessionInfo, SessionState, ActivityLog } from './claude-monitor.js';
 import { redactSecrets } from './redact.js';
 
 export class CodexMonitor extends EventEmitter {
@@ -19,6 +19,9 @@ export class CodexMonitor extends EventEmitter {
   private readonly ACTIVE_THRESHOLD_SECONDS = 30;
   private readonly IDLE_THRESHOLD_SECONDS = 300;
   private readonly SCAN_WINDOW_SECONDS = 600;
+
+  // Review candidate detection threshold (seconds)
+  private readonly REVIEW_CANDIDATE_THRESHOLD_SECONDS = 30; // 30s with no new activity
 
   constructor() {
     super();
@@ -145,6 +148,7 @@ export class CodexMonitor extends EventEmitter {
       let lastMessage = '';
       let lastMessageFull = '';
       const recentTools: string[] = [];
+      const recentActivity: ActivityLog[] = [];
 
       for (const line of recentLines) {
         if (!line.trim()) continue;
@@ -152,7 +156,7 @@ export class CodexMonitor extends EventEmitter {
         try {
           const data = JSON.parse(line);
 
-          // Extract user messages as current task
+          // Extract user messages as current task + record in recentActivity
           if (data.type === 'response_item' && data.payload?.role === 'user') {
             const content = data.payload.content;
             if (Array.isArray(content)) {
@@ -161,9 +165,25 @@ export class CodexMonitor extends EventEmitter {
                   const safeText = redactSecrets(block.text);
                   lastMessageFull = safeText;
                   lastMessage = safeText.length > 80 ? safeText.slice(0, 80) + '...' : safeText;
+                  // 사용자 메시지를 활동 로그에 기록 (needsReview 해제 조건용)
+                  recentActivity.push({
+                    timestamp: new Date(data.timestamp || Date.now()),
+                    type: 'message',
+                    summary: `💬 User: ${safeText.slice(0, 50)}${safeText.length > 50 ? '...' : ''}`,
+                  });
                 }
               }
             }
+          }
+
+          // Extract assistant responses as activity
+          if (data.type === 'response_item' && data.payload?.role === 'assistant') {
+            recentActivity.push({
+              timestamp: new Date(data.timestamp || Date.now()),
+              type: 'result',
+              summary: '✓ Assistant response',
+              is_error: false,
+            });
           }
 
           // Extract tool usage (if Codex exposes this in jsonl - may not be available)
@@ -172,6 +192,9 @@ export class CodexMonitor extends EventEmitter {
           // Ignore JSON parse errors
         }
       }
+
+      // 최근 활동만 유지 (최대 10개)
+      const trimmedActivity = recentActivity.slice(-10);
 
       // Calculate session state based on lastActivity
       const lastActivity = lastTimestamp || stat.mtime;
@@ -192,6 +215,30 @@ export class CodexMonitor extends EventEmitter {
       const mainAgentId = `codex:${sessionId}`;
       const agentStatus: 'idle' | 'working' | 'waiting' = state === 'active' ? 'working' : 'idle';
 
+      const existingAgent = this.agents.get(mainAgentId);
+
+      // needsReview 해제 조건 확인
+      let shouldClearReview = false;
+      if (existingAgent?.needsReview && existingAgent.reviewCandidateAt) {
+        const reviewTime = new Date(existingAgent.reviewCandidateAt).getTime();
+        // 조건 1: 파일 lastActivity가 reviewCandidateAt보다 늦으면 해제
+        if (lastActivity.getTime() > reviewTime) {
+          shouldClearReview = true;
+        }
+        // 조건 2: reviewCandidateAt 이후 새 message/tool_use가 있으면 해제
+        const hasNewActivity = trimmedActivity.some(activity =>
+          (activity.type === 'message' || activity.type === 'tool_use') &&
+          activity.timestamp.getTime() > reviewTime
+        );
+        if (hasNewActivity) {
+          shouldClearReview = true;
+        }
+      }
+      // 조건 3: agent가 working으로 재진입하면 해제
+      if (agentStatus === 'working' && existingAgent?.needsReview) {
+        shouldClearReview = true;
+      }
+
       const mainAgent: AgentInfo = {
         id: mainAgentId,
         name: 'Codex Agent',
@@ -200,7 +247,7 @@ export class CodexMonitor extends EventEmitter {
         currentTask: lastMessage || 'Session active',
         currentTaskFull: lastMessageFull || undefined,
         recentTools,
-        recentActivity: [],
+        recentActivity: trimmedActivity,
         tokens: {
           input: 0,
           output: 0,
@@ -212,6 +259,9 @@ export class CodexMonitor extends EventEmitter {
         projectPath,
         sessionId,
         source: 'codex',
+        needsReview: shouldClearReview ? false : (existingAgent?.needsReview || false),
+        reviewCandidateAt: shouldClearReview ? undefined : existingAgent?.reviewCandidateAt,
+        reviewReason: shouldClearReview ? undefined : existingAgent?.reviewReason,
       };
 
       this.agents.set(mainAgentId, mainAgent);
@@ -354,6 +404,74 @@ export class CodexMonitor extends EventEmitter {
     return dirPath;
   }
 
+  /**
+   * Check if an agent is a candidate for review based on conservative heuristics:
+   * - Agent must be idle
+   * - Must have some recent activity (보수적: activity가 없으면 무조건 false)
+   * - At least REVIEW_CANDIDATE_THRESHOLD_SECONDS have passed since last activity
+   * - No recent errors in activity log
+   * Note: Codex monitoring has limited activity tracking, so this is a simplified check
+   */
+  private checkNeedsReview(agent: AgentInfo, now: number): { needsReview: boolean; reason?: string } {
+    // Must be idle (not actively working)
+    if (agent.status !== 'idle') {
+      return { needsReview: false };
+    }
+
+    // 보수적 접근: activity가 전혀 없는 idle 세션은 needsReview로 만들지 않음
+    if (agent.recentActivity.length === 0) {
+      return { needsReview: false };
+    }
+
+    // Check if enough time has passed since last activity
+    const ageSeconds = (now - agent.lastActivity.getTime()) / 1000;
+    if (ageSeconds < this.REVIEW_CANDIDATE_THRESHOLD_SECONDS) {
+      return { needsReview: false };
+    }
+
+    // Check for errors in activity
+    const hasRecentError = agent.recentActivity.some(activity => activity.is_error === true);
+    if (hasRecentError) {
+      return { needsReview: false };
+    }
+
+    // Find the last tool_result (assistant response)
+    let lastResultIndex = -1;
+    for (let i = agent.recentActivity.length - 1; i >= 0; i--) {
+      if (agent.recentActivity[i].type === 'result') {
+        lastResultIndex = i;
+        break;
+      }
+    }
+
+    // 보수적 접근: assistant/result가 없으면 needsReview로 보지 않음
+    // user message만 있는 세션은 검수 필요 후보가 아님
+    if (lastResultIndex === -1) {
+      return { needsReview: false };
+    }
+
+    // Result exists - ensure it's successful and no activity after
+    const lastResult = agent.recentActivity[lastResultIndex];
+    if (lastResult.is_error === true) {
+      return { needsReview: false };
+    }
+
+    const activitiesAfterResult = agent.recentActivity.slice(lastResultIndex + 1);
+    const hasActivityAfterResult = activitiesAfterResult.some(
+      activity => activity.type === 'tool_use' || activity.type === 'message'
+    );
+
+    if (hasActivityAfterResult) {
+      return { needsReview: false };
+    }
+
+    // All conditions met - this is a review candidate
+    return {
+      needsReview: true,
+      reason: `Successful operation completed, idle for ${Math.floor(ageSeconds)}s`
+    };
+  }
+
   private watchSessionsDir() {
     if (!fs.existsSync(this.sessionsDir)) return;
 
@@ -441,11 +559,48 @@ export class CodexMonitor extends EventEmitter {
     const activeThreshold = this.ACTIVE_THRESHOLD_SECONDS * 1000;
     const idleThreshold = this.IDLE_THRESHOLD_SECONDS * 1000;
 
-    // Update agent status
+    // Update agent status and check for review candidates
     this.agents.forEach((agent) => {
       const age = now - agent.lastActivity.getTime();
+      let statusChanged = false;
+      let reviewStatusChanged = false;
+
+      // Update working/idle status
       if (age > activeThreshold && agent.status === 'working') {
         agent.status = 'idle';
+        statusChanged = true;
+      } else if (age <= activeThreshold && agent.status === 'idle') {
+        agent.status = 'working';
+        statusChanged = true;
+        // If agent becomes active again, clear review candidate status
+        if (agent.needsReview) {
+          agent.needsReview = false;
+          agent.reviewCandidateAt = undefined;
+          agent.reviewReason = undefined;
+          reviewStatusChanged = true;
+        }
+      }
+
+      // Check if agent needs review (only if idle)
+      if (agent.status === 'idle') {
+        const reviewCheck = this.checkNeedsReview(agent, now);
+
+        // If review status changed, update the agent
+        if (reviewCheck.needsReview && !agent.needsReview) {
+          agent.needsReview = true;
+          agent.reviewCandidateAt = new Date().toISOString();
+          agent.reviewReason = reviewCheck.reason;
+          reviewStatusChanged = true;
+        } else if (!reviewCheck.needsReview && agent.needsReview) {
+          agent.needsReview = false;
+          agent.reviewCandidateAt = undefined;
+          agent.reviewReason = undefined;
+          reviewStatusChanged = true;
+        }
+      }
+
+      // Emit update if anything changed
+      if (statusChanged || reviewStatusChanged) {
         this.emit('agent_updated', agent);
       }
     });

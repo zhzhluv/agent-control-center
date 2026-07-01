@@ -25,6 +25,9 @@ interface Agent {
   projectPath?: string
   isStale?: boolean
   source?: 'claude' | 'codex'  // Source of the agent session
+  needsReview?: boolean
+  reviewCandidateAt?: string
+  reviewReason?: string
 }
 
 interface Session {
@@ -229,9 +232,15 @@ type DerivedStatus =
   | 'approval_needed'
   | 'blocked'
   | 'recently_active'
+  | 'needs_review'
   | null
 
 function getDerivedStatus(agent: Agent): DerivedStatus {
+  // Check for needs_review first - highest priority
+  if (agent.needsReview === true) {
+    return 'needs_review'
+  }
+
   const now = new Date().getTime()
 
   if (agent.recentActivity && agent.recentActivity.length > 0) {
@@ -259,6 +268,7 @@ function getDerivedStatusLabel(derived: DerivedStatus): string | null {
   if (derived === 'approval_needed') return '승인 대기'
   if (derived === 'blocked') return '차단됨'
   if (derived === 'recently_active') return '활발함'
+  if (derived === 'needs_review') return '검수 필요'
   return null
 }
 
@@ -384,6 +394,10 @@ export default function App() {
   // Logs filter state
   const [logTypeFilter, setLogTypeFilter] = useState<'all' | 'tool_use' | 'result' | 'message'>('all')
   const [logAgentFilter, setLogAgentFilter] = useState<string>('all')
+
+  // Next instruction state
+  const [nextInstruction, setNextInstruction] = useState('')
+  const [showToast, setShowToast] = useState(false)
 
   // Diagnostics state
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null)
@@ -567,6 +581,17 @@ export default function App() {
       setLoadingDiagnostics(false)
     }
   }, [authToken])
+
+  const copyNextInstruction = useCallback(() => {
+    if (!nextInstruction.trim()) return
+
+    navigator.clipboard.writeText(nextInstruction).then(() => {
+      setShowToast(true)
+      setTimeout(() => setShowToast(false), 2000)
+    }).catch(err => {
+      console.error('Failed to copy:', err)
+    })
+  }, [nextInstruction])
 
   // Cleanup heartbeat timers
   const stopHeartbeat = useCallback(() => {
@@ -927,6 +952,18 @@ export default function App() {
 
             {selectedAgent ? (
               <div className="agent-inspector">
+                {selectedAgent.needsReview && (
+                  <div className="review-banner">
+                    <div className="review-banner-header">
+                      <span className="review-icon">✓</span>
+                      <div>
+                        <strong>검수 필요</strong>
+                        <p>{selectedAgent.reviewReason || '이 에이전트가 작업 검수를 요청했습니다.'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="agent-profile">
                   <span className={`profile-dot ${selectedAgent.status} ${selectedAgent.isStale ? 'stale' : ''}`} />
                   <div>
@@ -1008,6 +1045,27 @@ export default function App() {
                     <p className="empty-copy">아직 기록된 활동이 없습니다.</p>
                   )}
                 </div>
+
+                {selectedAgent.needsReview && (
+                  <div className="next-instruction-area">
+                    <h3>다음 지시 작성</h3>
+                    <textarea
+                      value={nextInstruction}
+                      onChange={(e) => setNextInstruction(e.target.value)}
+                      placeholder="다음 작업 지시를 입력하세요..."
+                      rows={4}
+                      className="next-instruction-input"
+                    />
+                    <button
+                      type="button"
+                      onClick={copyNextInstruction}
+                      disabled={!nextInstruction.trim()}
+                      className="copy-instruction-btn"
+                    >
+                      클립보드에 복사
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="empty-panel">
@@ -1434,6 +1492,12 @@ export default function App() {
             )}
           </section>
         </main>
+      )}
+
+      {showToast && (
+        <div className="toast">
+          클립보드에 복사되었습니다
+        </div>
       )}
     </div>
   )

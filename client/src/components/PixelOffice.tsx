@@ -23,6 +23,9 @@ export interface Agent {
   projectPath?: string
   isStale?: boolean
   source?: 'claude' | 'codex'
+  needsReview?: boolean
+  reviewCandidateAt?: string
+  reviewReason?: string
 }
 
 interface PixelOfficeProps {
@@ -346,8 +349,9 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     const bounce = Math.sin(frame * 0.1 + x) * 2
     const agentY = y + bounce
 
-    // 상태 색상 (stale이면 회색)
-    const statusColor = agent.isStale ? '#6a6a7a'
+    // 상태 색상 (needsReview > stale > status)
+    const statusColor = agent.needsReview ? '#30c3a8'  // Green for needs review
+      : agent.isStale ? '#6a6a7a'
       : agent.status === 'working' ? COLORS.working
       : agent.status === 'idle' ? COLORS.idle
       : COLORS.waiting
@@ -397,11 +401,22 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
     ctx.arc(x, agentY - 22, 4, 0, Math.PI * 2)
     ctx.fill()
 
-    // 상태 점 발광 효과
-    ctx.fillStyle = statusColor + '44'
-    ctx.beginPath()
-    ctx.arc(x, agentY - 22, 7, 0, Math.PI * 2)
-    ctx.fill()
+    // 상태 점 발광 효과 (needs review일 때 더 강하게)
+    if (agent.needsReview) {
+      ctx.fillStyle = statusColor + '88'
+      ctx.beginPath()
+      ctx.arc(x, agentY - 22, 10, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = statusColor + '44'
+      ctx.beginPath()
+      ctx.arc(x, agentY - 22, 14, 0, Math.PI * 2)
+      ctx.fill()
+    } else {
+      ctx.fillStyle = statusColor + '44'
+      ctx.beginPath()
+      ctx.arc(x, agentY - 22, 7, 0, Math.PI * 2)
+      ctx.fill()
+    }
 
     // working 상태면 타이핑 애니메이션
     if (agent.status === 'working') {
@@ -614,7 +629,7 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
           style={getTooltipStyle()}
         >
           <div className="tooltip-header">
-            <span className={`tooltip-status ${hoveredAgent.status} ${hoveredAgent.isStale ? 'stale' : ''}`}>●</span>
+            <span className={`tooltip-status ${hoveredAgent.needsReview ? 'needs-review' : hoveredAgent.status} ${hoveredAgent.isStale ? 'stale' : ''}`}>●</span>
             <span className="tooltip-name">{hoveredAgent.name}</span>
             {hoveredAgent.source && (
               <span className={`source-badge ${hoveredAgent.source}`} title={hoveredAgent.source === 'claude' ? 'Claude' : 'Codex'}>
@@ -625,6 +640,9 @@ export default function PixelOffice({ agents, selectedAgentId, onSelectAgent }: 
               {hoveredAgent.agentType === 'sub' ? 'SUB' : 'MAIN'}
             </span>
           </div>
+          {hoveredAgent.needsReview && (
+            <div className="tooltip-review-badge">검수 필요</div>
+          )}
           {hoveredAgent.isStale && (
             <div className="tooltip-stale-badge">Stale - No activity for 5+ min</div>
           )}
