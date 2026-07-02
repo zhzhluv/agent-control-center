@@ -329,6 +329,16 @@ function shortProject(path?: string) {
   return parts.at(-1) || path
 }
 
+function shortenPath(path?: string): string {
+  if (!path) return ''
+  // Replace home directory with ~
+  const homePath = path.replace(/^\/Users\/[^/]+/, '~')
+  // If still too long, take last 2-3 segments
+  const parts = homePath.split('/').filter(Boolean)
+  if (parts.length <= 3) return homePath
+  return parts.slice(-3).join('/')
+}
+
 function getTypeLabel(type: ActivityLog['type']): string {
   if (type === 'tool_use') return '도구 사용'
   if (type === 'result') return '도구 결과'
@@ -383,6 +393,11 @@ export default function App() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [connectionError, setConnectionError] = useState('')
   const [staleCheckTick, setStaleCheckTick] = useState(0) // Timer trigger for stale recalculation
+
+  // Project filter state (null = all projects)
+  const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(() => {
+    return localStorage.getItem('selectedProjectPath') || null
+  })
 
   // Reports state
   const [reports, setReports] = useState<Report[]>([])
@@ -466,9 +481,18 @@ export default function App() {
     }))
   }, [state.sessions, staleCheckTick])
 
+  // Filter agents by selected project (must be before selectedAgent)
+  const filteredAgents = useMemo(() => {
+    if (!selectedProjectPath) return agentsWithStale
+    return agentsWithStale.filter(agent => agent.projectPath === selectedProjectPath)
+  }, [agentsWithStale, selectedProjectPath])
+
+  // Use filtered agents when project filter is active for consistent selection
+  const visibleAgents = selectedProjectPath ? filteredAgents : agentsWithStale
+
   const selectedAgent = useMemo(
-    () => agentsWithStale.find(agent => agent.id === selectedAgentId) || agentsWithStale[0] || null,
-    [selectedAgentId, agentsWithStale],
+    () => visibleAgents.find(agent => agent.id === selectedAgentId) || visibleAgents[0] || null,
+    [selectedAgentId, visibleAgents],
   )
   const timeline = useMemo(() => buildTimeline(agentsWithStale), [agentsWithStale])
   const fullTimeline = useMemo(() => buildFullTimeline(agentsWithStale), [agentsWithStale])
@@ -488,6 +512,97 @@ export default function App() {
     const names = new Set(agentsWithStale.map(agent => agent.name))
     return Array.from(names).sort()
   }, [agentsWithStale])
+
+  // Project statistics for project board
+  interface ProjectStats {
+    path: string
+    name: string
+    totalAgents: number
+    workingAgents: number
+    needsReviewCount: number
+    claudeCount: number
+    codexCount: number
+    lastActivity: string | null
+  }
+
+  const projectStats = useMemo((): ProjectStats[] => {
+    const statsMap = new Map<string, ProjectStats>()
+
+    agentsWithStale.forEach(agent => {
+      const path = agent.projectPath || ''
+      if (!path) return
+
+      if (!statsMap.has(path)) {
+        statsMap.set(path, {
+          path,
+          name: shortProject(path),
+          totalAgents: 0,
+          workingAgents: 0,
+          needsReviewCount: 0,
+          claudeCount: 0,
+          codexCount: 0,
+          lastActivity: null,
+        })
+      }
+
+      const stats = statsMap.get(path)!
+      stats.totalAgents++
+      if (agent.status === 'working') stats.workingAgents++
+      if (agent.needsReview && agent.reviewState === 'pending') stats.needsReviewCount++
+      if (agent.source === 'claude') stats.claudeCount++
+      if (agent.source === 'codex') stats.codexCount++
+
+      // Track last activity
+      const lastTimestamp = getLastActivityTimestamp(agent)
+      if (lastTimestamp) {
+        if (!stats.lastActivity || new Date(lastTimestamp) > new Date(stats.lastActivity)) {
+          stats.lastActivity = lastTimestamp
+        }
+      }
+    })
+
+    return Array.from(statsMap.values()).sort((a, b) => {
+      // Sort by last activity (most recent first), then by name
+      if (a.lastActivity && b.lastActivity) {
+        return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+      }
+      if (a.lastActivity) return -1
+      if (b.lastActivity) return 1
+      return a.name.localeCompare(b.name)
+    })
+  }, [agentsWithStale])
+
+  // Validate and clear selectedProjectPath if project no longer exists
+  useEffect(() => {
+    if (selectedProjectPath && projectStats.length > 0) {
+      const exists = projectStats.some(p => p.path === selectedProjectPath)
+      if (!exists) {
+        setSelectedProjectPath(null)
+        localStorage.removeItem('selectedProjectPath')
+      }
+    }
+  }, [selectedProjectPath, projectStats])
+
+  // Persist project selection to localStorage
+  useEffect(() => {
+    if (selectedProjectPath) {
+      localStorage.setItem('selectedProjectPath', selectedProjectPath)
+    } else {
+      localStorage.removeItem('selectedProjectPath')
+    }
+  }, [selectedProjectPath])
+
+  // Update selectedAgentId when filter changes and current agent is outside filter
+  useEffect(() => {
+    if (selectedAgentId && selectedProjectPath) {
+      const agent = agentsWithStale.find(a => a.id === selectedAgentId)
+      if (agent && agent.projectPath !== selectedProjectPath) {
+        // Current agent is outside filter, select first filtered agent or null
+        const firstFiltered = filteredAgents[0]
+        setSelectedAgentId(firstFiltered?.id || null)
+      }
+    }
+  }, [selectedProjectPath, selectedAgentId, agentsWithStale, filteredAgents])
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
@@ -1289,16 +1404,76 @@ export default function App() {
               </div>
             </div>
 
+            {/* Project Board */}
+            {projectStats.length > 0 && (
+              <div className="project-board">
+                <div className="project-board-header">
+                  <span className="project-board-title">프로젝트</span>
+                  {selectedProjectPath && (
+                    <button
+                      type="button"
+                      className="project-clear-btn"
+                      onClick={() => setSelectedProjectPath(null)}
+                    >
+                      전체 보기
+                    </button>
+                  )}
+                </div>
+                <div className="project-list">
+                  {projectStats.map(project => (
+                    <button
+                      key={project.path}
+                      type="button"
+                      className={`project-card ${selectedProjectPath === project.path ? 'selected' : ''}`}
+                      onClick={() => setSelectedProjectPath(
+                        selectedProjectPath === project.path ? null : project.path
+                      )}
+                      title={project.path}
+                    >
+                      <div className="project-card-header">
+                        <strong className="project-name">{project.name}</strong>
+                        <span className="project-agents-count">{project.totalAgents}</span>
+                      </div>
+                      <small className="project-path">{shortenPath(project.path)}</small>
+                      <div className="project-card-stats">
+                        {project.workingAgents > 0 && (
+                          <span className="project-stat working" title="작업 중">
+                            {project.workingAgents}
+                          </span>
+                        )}
+                        {project.needsReviewCount > 0 && (
+                          <span className="project-stat review" title="검수 대기">
+                            {project.needsReviewCount}
+                          </span>
+                        )}
+                        <span className="project-sources">
+                          {project.claudeCount > 0 && (
+                            <span className="source-badge claude" title={`Claude ${project.claudeCount}`}>C</span>
+                          )}
+                          {project.codexCount > 0 && (
+                            <span className="source-badge codex" title={`Codex ${project.codexCount}`}>X</span>
+                          )}
+                        </span>
+                      </div>
+                      {project.lastActivity && (
+                        <small className="project-last-activity">{formatTimeSince(project.lastActivity)}</small>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="staff-list">
-              {agentsWithStale.length === 0 ? (
+              {filteredAgents.length === 0 ? (
                 <div className="empty-panel">
-                  <strong>활성 직원 없음</strong>
-                  <p>터미널에서 Claude Code 작업을 시작하면 자동으로 감지됩니다.</p>
+                  <strong>{selectedProjectPath ? '이 프로젝트에 활성 직원 없음' : '활성 직원 없음'}</strong>
+                  <p>{selectedProjectPath ? '다른 프로젝트를 선택하거나 전체 보기를 사용하세요.' : '터미널에서 Claude Code 작업을 시작하면 자동으로 감지됩니다.'}</p>
                 </div>
               ) : (
                 <>
-                  <ReviewQueue agents={agentsWithStale} onSelectAgent={setSelectedAgentId} onUpdateReviewState={updateReviewState} />
-                  {agentsWithStale.map(agent => {
+                  <ReviewQueue agents={filteredAgents} onSelectAgent={setSelectedAgentId} onUpdateReviewState={updateReviewState} />
+                  {filteredAgents.map(agent => {
                   const derived = getDerivedStatus(agent)
                   const derivedLabel = getDerivedStatusLabel(derived)
                   const sourceBadge = getSourceBadge(agent.source)
