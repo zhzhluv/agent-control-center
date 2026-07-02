@@ -429,24 +429,20 @@ export default function App() {
     agentId: string
     agentName: string
     timestamp: string
+    isTest?: boolean
   }
   const [reviewToasts, setReviewToasts] = useState<ReviewToast[]>([])
 
   // Dedupe tracking for notifications
   const notifiedAgentsRef = useRef<Set<string>>(new Set())
 
-  // Refs for notification state to avoid stale closure in WebSocket callback
+  // Ref for notification state to avoid stale closure in WebSocket callback
   const notificationEnabledRef = useRef(notificationEnabled)
-  const notificationPermissionRef = useRef(notificationPermission)
 
-  // Sync notification state to refs to avoid stale closure
+  // Sync notification state to ref to avoid stale closure
   useEffect(() => {
     notificationEnabledRef.current = notificationEnabled
   }, [notificationEnabled])
-
-  useEffect(() => {
-    notificationPermissionRef.current = notificationPermission
-  }, [notificationPermission])
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
@@ -1654,6 +1650,68 @@ export default function App() {
                 </p>
               )}
             </div>
+
+            <div className="notification-diagnostics">
+              <h3>알림 진단</h3>
+              <div className="diagnostics-grid">
+                <span className="diag-label">Notification API</span>
+                <span className={`diag-value ${typeof Notification !== 'undefined' ? 'ok' : 'warn'}`}>
+                  {typeof Notification !== 'undefined' ? '지원됨' : '미지원'}
+                </span>
+
+                <span className="diag-label">브라우저 권한</span>
+                <span className={`diag-value ${notificationPermission === 'granted' ? 'ok' : notificationPermission === 'denied' ? 'error' : 'warn'}`}>
+                  {notificationPermission === 'granted' ? '허용됨' : notificationPermission === 'denied' ? '차단됨' : '미요청'}
+                </span>
+
+                <span className="diag-label">앱 알림 설정</span>
+                <span className={`diag-value ${notificationEnabled ? 'ok' : 'warn'}`}>
+                  {notificationEnabled ? 'ON' : 'OFF'}
+                </span>
+
+                <span className="diag-label">인앱 토스트</span>
+                <span className="diag-value ok">항상 동작 (권한 무관)</span>
+              </div>
+            </div>
+
+            <div className="notification-test">
+              <h3>테스트 알림</h3>
+              <p className="test-info">
+                {notificationPermission === 'granted' && notificationEnabled
+                  ? '브라우저 알림과 인앱 토스트가 모두 표시됩니다.'
+                  : '인앱 토스트만 표시됩니다. 브라우저 알림을 테스트하려면 권한을 허용하고 ON으로 설정하세요.'}
+              </p>
+              <button
+                type="button"
+                className="test-notification-btn"
+                onClick={() => {
+                  // Show browser notification if enabled
+                  if (notificationEnabledRef.current && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                    const notification = new Notification('테스트 알림', {
+                      body: '알림이 정상적으로 동작합니다.',
+                      icon: '/favicon.ico',
+                      tag: 'test-notification',
+                      requireInteraction: false,
+                    })
+                    setTimeout(() => notification.close(), 5000)
+                  }
+                  // Always show toast (add and remove after 3 seconds)
+                  const testToast: ReviewToast = {
+                    id: `test-${Date.now()}`,
+                    agentId: 'test-notification',
+                    agentName: '테스트',
+                    timestamp: new Date().toISOString(),
+                    isTest: true,
+                  }
+                  setReviewToasts(prev => [testToast, ...prev].slice(0, 3))
+                  setTimeout(() => {
+                    setReviewToasts(prev => prev.filter(t => t.id !== testToast.id))
+                  }, 3000)
+                }}
+              >
+                테스트 알림 보내기
+              </button>
+            </div>
           </section>
 
           <section className="settings-panel diagnostics-panel">
@@ -1764,12 +1822,19 @@ export default function App() {
           {reviewToasts.map(toast => (
             <div
               key={toast.id}
-              className="review-toast"
-              onClick={() => handleReviewToastClick(toast.agentId)}
+              className={`review-toast ${toast.isTest ? 'test-toast' : ''}`}
+              onClick={() => {
+                if (toast.isTest) {
+                  // Test toast: just dismiss, do not select agent
+                  removeReviewToast(toast.id)
+                } else {
+                  handleReviewToastClick(toast.agentId)
+                }
+              }}
             >
               <div className="review-toast-content">
-                <strong>검수 필요</strong>
-                <p>{toast.agentName} 작업이 완료된 것으로 보입니다.</p>
+                <strong>{toast.isTest ? '테스트 알림' : '검수 필요'}</strong>
+                <p>{toast.isTest ? '알림이 정상적으로 동작합니다.' : `${toast.agentName} 작업이 완료된 것으로 보입니다.`}</p>
               </div>
               <button
                 type="button"

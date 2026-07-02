@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface Agent {
   id: string
@@ -59,8 +59,23 @@ const FILTER_OPTIONS: { value: FilterType; label: string }[] = [
   { value: 'dismissed', label: '숨김' },
 ]
 
+const VALID_FILTERS: FilterType[] = ['all', 'pending', 'acknowledged', 'copied', 'dismissed']
+
+function getInitialFilter(): FilterType {
+  const saved = localStorage.getItem('reviewQueueFilter')
+  if (saved && VALID_FILTERS.includes(saved as FilterType)) {
+    return saved as FilterType
+  }
+  return 'all'
+}
+
 export default function ReviewQueue({ agents, onSelectAgent, onUpdateReviewState }: ReviewQueueProps) {
-  const [filter, setFilter] = useState<FilterType>('all')
+  const [filter, setFilter] = useState<FilterType>(getInitialFilter)
+
+  // Persist filter to localStorage
+  useEffect(() => {
+    localStorage.setItem('reviewQueueFilter', filter)
+  }, [filter])
 
   const reviewAgents = agents.filter(agent => agent.needsReview)
 
@@ -169,6 +184,7 @@ export default function ReviewQueue({ agents, onSelectAgent, onUpdateReviewState
                         type="button"
                         className="action-btn ack"
                         title="확인함"
+                        aria-label={`${agent.name} 확인함으로 표시`}
                         onClick={(e) => handleAction(e, agent.id, 'acknowledged')}
                       >
                         ✓
@@ -179,6 +195,7 @@ export default function ReviewQueue({ agents, onSelectAgent, onUpdateReviewState
                         type="button"
                         className="action-btn dismiss"
                         title="숨기기"
+                        aria-label={`${agent.name} 숨기기`}
                         onClick={(e) => handleAction(e, agent.id, 'dismissed')}
                       >
                         ✕
