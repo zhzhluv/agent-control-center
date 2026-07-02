@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import './App.css'
-import PixelOffice from './components/PixelOffice'
+import OperationsMap from './components/OperationsMap'
 import ReviewQueue from './components/ReviewQueue'
 import { sanitizeForDisplay } from './utils/sanitize'
 
@@ -1221,11 +1221,11 @@ export default function App() {
 
       {activeView === 'ops' && (
         <main className="ops-layout">
-          <section className="office-shell" aria-label="agent office">
+          <section className="office-shell" aria-label="에이전트 관제 맵">
             <div className="panel-head">
               <div>
-                <p className="eyebrow">Live Office</p>
-                <h2>직원 운영실</h2>
+                <p className="eyebrow">관제 맵</p>
+                <h2>관제 센터</h2>
               </div>
               <div className="office-summary">
                 <span>{activeProjectCount} {activeProjectCount === 1 ? '프로젝트' : '프로젝트'}</span>
@@ -1233,17 +1233,17 @@ export default function App() {
               </div>
             </div>
 
-            <PixelOffice
+            <OperationsMap
               agents={agentsWithStale}
               selectedAgentId={selectedAgent?.id || null}
               onSelectAgent={setSelectedAgentId}
             />
           </section>
 
-          <aside className="inspector-shell" aria-label="agent inspector">
+          <aside className="inspector-shell" aria-label="에이전트 상세 정보">
             <div className="panel-head">
               <div>
-                <p className="eyebrow">Inspector</p>
+                <p className="eyebrow">상세 정보</p>
                 <h2>직원 상세</h2>
               </div>
             </div>
